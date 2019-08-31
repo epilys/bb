@@ -133,50 +133,51 @@ impl Component for KernelMetrics {
         }
         /* Draw CPU usage bars */
 
-        let bar_max = std::dbg!((0.6 * total_cols as f32) as usize);
+        let bar_max = (0.6 * total_cols as f32) as usize;
 
+        let old_cpu_stat = self.cpu_stat[0];
         let mut boot_time: usize = 0;
         for (i, cpu_stat) in get_stat(&mut boot_time).into_iter().enumerate() {
-            let (mut x, y) = write_string_to_grid(
-                "CPU",
-                grid,
-                Color::Byte(250),
-                Color::Default,
-                Attr::Default,
-                (pos_inc(upper_left, (2, 2 + i)), bottom_right),
-                false,
-            );
-            if i > 0 {
+            let (mut x, y) = if i > 0 {
                 write_string_to_grid(
-                    &i.to_string(),
+                    &format!("CPU{}", i),
                     grid,
                     Color::Default,
                     Color::Default,
-                    Attr::Default,
-                    ((x, y), bottom_right),
+                    Attr::Bold,
+                    (pos_inc(upper_left, (2, 2 + i)), bottom_right),
                     false,
-                );
+                )
             } else {
                 /* add padding */
-                write_string_to_grid(
-                    " ",
+                let (x, y) = write_string_to_grid(
+                    "Σ",
                     grid,
                     Color::Default,
                     Color::Default,
                     Attr::Default,
-                    ((x, y), bottom_right),
+                    (pos_inc(upper_left, (2, 2 + i)), bottom_right),
                     false,
                 );
-            }
+                write_string_to_grid(
+                    "CPU",
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    ((x, y), bottom_right),
+                    false,
+                )
+            };
             x += 2;
 
             /* Calculate percentages for the cpu usage bar */
             let busy_length = (cpu_stat.user_time + cpu_stat.system_time)
                 - (self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
             let iowait_length = cpu_stat.iowait_time - self.cpu_stat[i].iowait_time;
-            let bar_length: usize = std::dbg!(
-                (((busy_length + iowait_length) as f64 / 100.0) * bar_max as f64) as usize
-            );
+            let bar_length: usize = (((busy_length + iowait_length) as f64
+                / (cpu_stat.total_time() - self.cpu_stat[i].total_time()) as f64)
+                * bar_max as f64) as usize;
 
             let mut x_offset = 0;
             while x_offset < bar_length {
@@ -213,7 +214,7 @@ impl Component for KernelMetrics {
 
         y_offset += 1;
 
-        let bar_max = bar_max + 5;
+        let bar_max = bar_max + 6;
         let (available, total) = get_mem_info();
         let available_length = ((available as f64 / total as f64) * bar_max as f64) as usize;
         let mem_bar_length = bar_max - available_length;
@@ -283,6 +284,74 @@ impl Component for KernelMetrics {
                 false,
             );
         }
+
+        /* Various values table */
+
+        /* CPU Times */
+        let mut cpu_column_width = "CPU".len();
+        let upper_left = pos_inc(upper_left, (bar_max + 5, 2));
+        write_string_to_grid(
+            "CPU%",
+            grid,
+            Color::Default,
+            Color::Default,
+            Attr::Bold,
+            (upper_left, bottom_right),
+            false,
+        );
+        for (i, (tag, s, fg_color, bg_color)) in get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
+            .into_iter()
+            .enumerate()
+        {
+            let (x, y) = write_string_to_grid(
+                tag,
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Default,
+                (pos_inc(upper_left, (0, i + 1)), bottom_right),
+                false,
+            );
+
+            let padding = 6 - s.len();
+            clear_area(grid, ((x, y), (x + padding + 1, y)));
+
+            write_string_to_grid(
+                &s,
+                grid,
+                fg_color,
+                bg_color,
+                Attr::Default,
+                ((x + 2 + padding, y), bottom_right),
+                false,
+            );
+            cpu_column_width = std::cmp::max(tag.len() + s.len() + 4, cpu_column_width);
+        }
+
+        /* Load average */
+        let mut load_column_width = "LOAD_AVG".len();
+        let upper_left = pos_inc(upper_left, (cpu_column_width + 3, 0));
+        write_string_to_grid(
+            "LOAD_AVG",
+            grid,
+            Color::Default,
+            Color::Default,
+            Attr::Bold,
+            (upper_left, bottom_right),
+            false,
+        );
+        let loadavgs = get_loadavg();
+        for (i, avg) in loadavgs.into_iter().enumerate() {
+            write_string_to_grid(
+                avg,
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Default,
+                (pos_inc(upper_left, (0, i + 1)), bottom_right),
+                false,
+            );
+        }
     }
 
     fn process_event(&mut self, event: &mut UIEvent) {
@@ -331,46 +400,61 @@ fn get_mem_info() -> (usize, usize) {
     (mem_available, mem_total)
 }
 
-#[derive(Debug)]
-struct Stat {
-    user_time: usize,
-    system_time: usize,
-    idle_time: usize,
-    iowait_time: usize,
-}
-
-fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
-    let mut file = File::open("/proc/stat").unwrap();
+fn get_loadavg() -> [String; 3] {
+    let mut file = File::open("/proc/loadavg").unwrap();
     let mut res = String::with_capacity(2048);
     file.read_to_string(&mut res).unwrap();
-    let mut lines_iter = res.lines();
-    let mut ret = Vec::with_capacity(8);
-    let mut line;
-    loop {
-        line = lines_iter.next().unwrap();
-        if !line.starts_with("cpu") {
-            break;
-        }
+    let mut mut_value_iter = res.split_whitespace();
+    let avg_1 = mut_value_iter.next().unwrap().to_string();
+    let avg_5 = mut_value_iter.next().unwrap().to_string();
+    let avg_15 = mut_value_iter.next().unwrap().to_string();
+    [avg_1, avg_5, avg_15]
+}
 
-        let mut mut_value_iter = line.split_whitespace().skip(1);
+fn get_cpu_times(
+    old_cpu_stat: &Stat,
+    cpu_stat: &Stat,
+) -> Vec<(&'static str, String, Color, Color)> {
+    let mut ret = Vec::new();
 
-        let user_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        /* skip nice time */
-        mut_value_iter.next();
-        let system_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let idle_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let iowait_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        ret.push(Stat {
-            user_time,
-            system_time,
-            idle_time,
-            iowait_time,
-        });
-    }
-    while !line.starts_with("btime") {
-        line = lines_iter.next().unwrap();
-    }
-    *boot_time = usize::from_str(&line.split_whitespace().skip(1).next().unwrap()).unwrap();
+    macro_rules! val {
+        ($tag:literal, $field:tt) => {
+            let percent = (cpu_stat.$field - old_cpu_stat.$field) as f64
+                / (cpu_stat.total_time() - old_cpu_stat.total_time()) as f64;
+            let s = format!("{:.1}%", percent * 100.0);
+            ret.push((
+                $tag,
+                s,
+                if percent < 0.15 {
+                    Color::Default
+                } else if percent < 0.50 {
+                    Color::Default
+                } else {
+                    Color::White
+                },
+                if percent < 0.15 {
+                    Color::Default
+                } else if percent < 0.50 {
+                    Color::Byte(70)
+                } else if $tag != "idle%  " {
+                    Color::Red
+                } else {
+                    Color::Default
+                },
+            ));
+        };
+    };
+
+    /* user % */
+    val!("user%  ", user_time);
+    /* system % */
+    val!("system%", system_time);
+    /* nice % */
+    val!("nice%  ", nice_time);
+    /* idle % */
+    val!("idle%  ", idle_time);
+    /* iowait % */
+    val!("iowait%", iowait_time);
 
     ret
 }

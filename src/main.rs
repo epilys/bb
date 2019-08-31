@@ -60,7 +60,7 @@ fn main() -> Result<(), Error> {
         signal_hook::SIGWINCH,
     ];
 
-    let ticker = tick(Duration::from_millis(800));
+    let ticker = tick(Duration::from_millis(1600));
 
     let signal_recvr = notify(signals)?;
 
@@ -119,7 +119,7 @@ fn main() -> Result<(), Error> {
                                 },
                                 key  => {
                                     state.rcv_event(UIEvent::Input(key));
-                                     state.redraw(false);
+                                    state.redraw(false);
                                 },
                             }
                         },

@@ -677,7 +677,12 @@ pub fn copy_area(grid_dest: &mut CellBuffer, grid_src: &CellBuffer, dest: Area, 
 }
 
 /// Change foreground and background colors in an `Area`
-pub fn change_colors(grid: &mut CellBuffer, area: Area, fg_color: Color, bg_color: Color) {
+pub fn change_colors(
+    grid: &mut CellBuffer,
+    area: Area,
+    fg_color: Option<Color>,
+    bg_color: Option<Color>,
+) {
     let bounds = grid.size();
     let upper_left = upper_left!(area);
     let bottom_right = bottom_right!(area);
@@ -696,8 +701,12 @@ pub fn change_colors(grid: &mut CellBuffer, area: Area, fg_color: Color, bg_colo
     }
     for y in get_y(upper_left!(area))..=get_y(bottom_right!(area)) {
         for x in get_x(upper_left!(area))..=get_x(bottom_right!(area)) {
-            grid[(x, y)].set_fg(fg_color);
-            grid[(x, y)].set_bg(bg_color);
+            if let Some(fg_color) = fg_color {
+                grid[(x, y)].set_fg(fg_color);
+            }
+            if let Some(bg_color) = bg_color {
+                grid[(x, y)].set_bg(bg_color);
+            }
         }
     }
 }

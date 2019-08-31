@@ -43,7 +43,7 @@ pub mod username {
     use libc;
     use std::ptr::null_mut;
     /* taken from whoami-0.1.1 */
-    fn getpwuid() -> libc::passwd {
+    fn getpwuid(pw_uid: u32) -> libc::passwd {
         let mut pwentp = null_mut();
         let mut buffer = [0i8; 16384]; // from the man page
         #[cfg(any(
@@ -58,7 +58,7 @@ pub mod username {
             let mut pwent = libc::passwd {
                 pw_name: null_mut(),
                 pw_passwd: null_mut(),
-                pw_uid: 0,
+                pw_uid,
                 pw_gid: 0,
                 pw_change: 0,
                 pw_class: null_mut(),
@@ -68,13 +68,7 @@ pub mod username {
                 pw_expire: 0,
             };
             unsafe {
-                libc::getpwuid_r(
-                    libc::geteuid(),
-                    &mut pwent,
-                    &mut buffer[0],
-                    16384,
-                    &mut pwentp,
-                );
+                libc::getpwuid_r(pw_uid, &mut pwent, &mut buffer[0], 16384, &mut pwentp);
             }
 
             pwent
@@ -84,7 +78,7 @@ pub mod username {
             let mut pwent = libc::passwd {
                 pw_name: null_mut(),
                 pw_passwd: null_mut(),
-                pw_uid: 0,
+                pw_uid,
                 pw_gid: 0,
                 pw_gecos: null_mut(),
                 pw_dir: null_mut(),
@@ -92,13 +86,7 @@ pub mod username {
             };
 
             unsafe {
-                libc::getpwuid_r(
-                    libc::geteuid(),
-                    &mut pwent,
-                    &mut buffer[0],
-                    16384,
-                    &mut pwentp,
-                );
+                libc::getpwuid_r(pw_uid, &mut pwent, &mut buffer[0], 16384, &mut pwentp);
             }
 
             pwent
@@ -117,8 +105,9 @@ pub mod username {
 
         string
     }
-    pub fn username() -> String {
-        let pwent = getpwuid();
+
+    pub fn username(uid: u32) -> String {
+        let pwent = getpwuid(uid);
 
         ptr_to_string(pwent.pw_name)
     }

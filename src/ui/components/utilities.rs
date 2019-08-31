@@ -22,6 +22,9 @@
 /*! Various useful components that can be used in a generic fashion.
  */
 use super::*;
+use std::fs::File;
+use std::io::prelude::*;
+use std::str::FromStr;
 
 mod widgets;
 
@@ -249,6 +252,8 @@ impl Component for VSplit {
 
 #[derive(Debug)]
 pub enum PageMovement {
+    Up,
+    Down,
     Home,
     PageUp,
     PageDown,
@@ -279,4 +284,56 @@ impl Bytes {
             format!("{:.2} PiB", bytes / PETABYTE)
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Stat {
+    pub user_time: usize,
+    pub system_time: usize,
+    pub nice_time: usize,
+    pub idle_time: usize,
+    pub iowait_time: usize,
+}
+
+impl Stat {
+    pub fn total_time(&self) -> usize {
+        self.user_time + self.system_time + self.nice_time + self.idle_time + self.iowait_time
+    }
+}
+
+pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
+    let mut file = File::open("/proc/stat").unwrap();
+    let mut res = String::with_capacity(2048);
+    file.read_to_string(&mut res).unwrap();
+    let mut lines_iter = res.lines();
+    let mut ret = Vec::with_capacity(8);
+    let mut line;
+    loop {
+        line = lines_iter.next().unwrap();
+        if !line.starts_with("cpu") {
+            break;
+        }
+
+        let mut mut_value_iter = line.split_whitespace().skip(1);
+
+        let user_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        /* skip nice time */
+        let nice_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let system_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let idle_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let iowait_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        ret.push(Stat {
+            user_time,
+            system_time,
+            nice_time,
+            idle_time,
+            iowait_time,
+        });
+    }
+    while !line.starts_with("btime") {
+        line = lines_iter.next().unwrap();
+    }
+    *boot_time = usize::from_str(&line.split_whitespace().skip(1).next().unwrap()).unwrap();
+
+    ret
 }

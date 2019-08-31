@@ -1,0 +1,26 @@
+[package]
+name = "bb"
+version = "0.1.0"
+authors = ["Manos Pitsidianakis <el13635@mail.ntua.gr>"]
+edition = "2018"
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "bb"
+path = "src/main.rs"
+
+[dependencies]
+crossbeam = "0.7"
+signal-hook = "0.1.10"
+termion = "1.5.3"
+libc = "0.2.62"
+unicode-segmentation = "1.2.1"
+nix = "0.15.0"
+
+[profile.release]
+opt-level = 'z'  # Optimize for size.
+lto = true
+codegen-units = 1
+panic = 'abort'

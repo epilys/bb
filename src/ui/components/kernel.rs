@@ -173,10 +173,14 @@ impl Component for KernelMetrics {
 
             /* Calculate percentages for the cpu usage bar */
             let busy_length = (cpu_stat.user_time + cpu_stat.system_time)
-                - (self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
-            let iowait_length = cpu_stat.iowait_time - self.cpu_stat[i].iowait_time;
+                .saturating_sub(self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
+            let iowait_length = cpu_stat
+                .iowait_time
+                .saturating_sub(self.cpu_stat[i].iowait_time);
             let bar_length: usize = (((busy_length + iowait_length) as f64
-                / (cpu_stat.total_time() - self.cpu_stat[i].total_time()) as f64)
+                / (cpu_stat
+                    .total_time()
+                    .saturating_sub(self.cpu_stat[i].total_time())) as f64)
                 * bar_max as f64) as usize;
 
             let mut x_offset = 0;

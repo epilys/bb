@@ -4,7 +4,77 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+/* Hold maximum width for each column */
+#[derive(Debug)]
+struct ColumnWidthMaxima {
+    pid: usize,
+    ppid: usize,
+    vm_rss: usize,
+    cpu_percent: usize,
+    state: usize,
+    username: usize,
+}
+
+impl ColumnWidthMaxima {
+    fn new() -> ColumnWidthMaxima {
+        ColumnWidthMaxima {
+            pid: "PID".len(),
+            ppid: "PPID".len(),
+            vm_rss: "VM_RSS".len(),
+            cpu_percent: "CPU%".len(),
+            state: 1,
+            username: "USER".len(),
+        }
+    }
+}
+
+macro_rules! define_column_string {
+    ($($typename: tt),+) => {
+        $(
+          #[derive(Debug)]
+          struct $typename(String);
+
+          impl $typename {
+              fn len(&self) -> usize {
+                  self.0.len()
+              }
+          }
+
+          impl std::fmt::Display for $typename {
+              fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                  if let Some(width) =  f.width() {
+                      write!(f, "{:>width$}", self.0, width = width)
+                  } else {
+                      write!(f, "{:>}", self.0)
+                  }
+              }
+          })+
+    }
+}
+
+define_column_string!(
+    PidString,
+    PpidString,
+    VmRssString,
+    CmdLineString,
+    UserString
+);
+
 type Pid = usize;
+
+/* Wrapper type for display strings */
+#[derive(Debug)]
+struct ProcessDisplay {
+    i: Pid,
+    pid: PidString,
+    ppid: PpidString,
+    vm_rss: VmRssString,
+    cpu_percent: usize,
+    state: State,
+    cmd_line: CmdLineString,
+    username: UserString,
+    utime: usize,
+}
 
 /* process list components */
 #[derive(Debug)]
@@ -13,12 +83,15 @@ pub struct ProcessList {
     cpu_stat: Stat,
     pid_max: usize,
     cursor: usize,
+    height: usize,
     dirty: bool,
-    processes: HashMap<Pid, usize>,
+    processes_times: HashMap<Pid, usize>,
+    processes: Vec<ProcessDisplay>,
     /* refresh process list every 4 cycles */
     cycle: u8,
 }
 
+#[derive(Debug)]
 enum State {
     /* Z  Zombie */
     Zombie,
@@ -115,8 +188,10 @@ impl ProcessList {
             page_movement: None,
             cpu_stat: get_stat(&mut 0).remove(0),
             pid_max: usize::from_str(pid_max.trim()).unwrap(),
-            processes: Default::default(),
+            processes: Vec::with_capacity(1024),
+            processes_times: Default::default(),
             cycle: 0,
+            height: 0,
             dirty: true,
         }
     }
@@ -141,8 +216,9 @@ impl Component for ProcessList {
 
         let upper_left = pos_inc(upper_left!(area), (1, 0));
         let bottom_right = pos_dec(bottom_right!(area), (1, 1));
+
         /* Reserve first row for column headers */
-        let height = height!(area) - 1;
+        let height = height!(area) - 5;
         let old_pages = self.cursor / height;
         let width = width!(area);
 
@@ -153,8 +229,7 @@ impl Component for ProcessList {
                     self.cursor = self.cursor.saturating_sub(1);
                 }
                 PageMovement::Down => {
-                    self.cursor =
-                        std::cmp::min(self.processes.len().saturating_sub(1), self.cursor + 1);
+                    self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor + 1);
                 }
                 PageMovement::Home => {
                     self.cursor = 0;
@@ -164,10 +239,10 @@ impl Component for ProcessList {
                 }
                 PageMovement::PageDown => {
                     self.cursor =
-                        std::cmp::min(self.processes.len().saturating_sub(1), self.cursor + height);
+                        std::cmp::min(self.height.saturating_sub(1), self.cursor + height);
                 }
                 PageMovement::End => {
-                    self.cursor = self.processes.len().saturating_sub(1);
+                    self.cursor = self.height.saturating_sub(1);
                 }
             }
         }
@@ -180,21 +255,14 @@ impl Component for ProcessList {
             clear_area(grid, area);
             dirty_areas.push_back(area);
 
-            let mut processes: Vec<(String, String, String, usize, String, String, String)> =
-                Vec::with_capacity(1024);
+            self.processes.clear();
 
             let cpu_stat = get_stat(&mut 0).remove(0);
 
             /* Keep tabs on biggest element in each column */
-            let mut maxima = (
-                "PID".len(),
-                "PPID".len(),
-                "VM_RSS".len(),
-                "CPU%".len(),
-                " ".len(),
-                "USER".len(),
-            );
+            let mut maxima = ColumnWidthMaxima::new();
 
+            self.height = 0;
             for entry in std::fs::read_dir("/proc/").unwrap() {
                 let dir = entry.unwrap();
                 if let Some(fname) = dir.file_name().to_str() {
@@ -216,54 +284,55 @@ impl Component for ProcessList {
                     continue;
                 }
 
-                let strings = (
-                    process.pid.to_string(),
-                    process.ppid.to_string(),
-                    Bytes(process.vm_rss * 1024).as_convenient_string(),
-                    (100.0
+                let process_display = ProcessDisplay {
+                    i: process.pid,
+                    pid: PidString(process.pid.to_string()),
+                    ppid: PpidString(process.ppid.to_string()),
+                    vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
+                    cpu_percent: (100.0
                         * ((process.utime
                             - self
-                                .processes
+                                .processes_times
                                 .get(&process.pid)
                                 .map(|v| *v)
                                 .unwrap_or(process.utime)) as f64
                             / ((cpu_stat.total_time() - self.cpu_stat.total_time()) as f64)))
                         as usize,
-                    process.state.to_string(),
-                    process.cmd_line,
-                    crate::ui::username(process.uid),
-                );
+                    utime: process.utime,
+                    state: process.state,
+                    cmd_line: CmdLineString(process.cmd_line),
+                    username: UserString(crate::ui::username(process.uid)),
+                };
 
-                self.processes.insert(process.pid, process.utime);
+                self.processes_times
+                    .insert(process.pid, process_display.utime);
 
-                maxima.0 = std::cmp::max(maxima.0, strings.0.len());
-                maxima.1 = std::cmp::max(maxima.1, strings.1.len());
-                maxima.2 = std::cmp::max(maxima.2, strings.2.len());
-                maxima.4 = std::cmp::max(maxima.4, strings.4.len());
-                maxima.5 = std::cmp::max(maxima.5, strings.6.len());
-                processes.push(strings);
+                maxima.pid = std::cmp::max(maxima.pid, process_display.pid.len());
+                maxima.ppid = std::cmp::max(maxima.ppid, process_display.ppid.len());
+                maxima.vm_rss = std::cmp::max(maxima.vm_rss, process_display.vm_rss.len());
+                maxima.username = std::cmp::max(maxima.username, process_display.username.len());
+                self.processes.push(process_display);
+                self.height += 1;
             }
             self.cpu_stat = cpu_stat;
-
-            processes.sort_unstable_by(|a, b| b.3.cmp(&a.3));
-
+            self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
             /* Write column headers */
             let (x, y) = write_string_to_grid(
                 &format!(
-                    "{:>maxima0$}  {:>maxima1$}  {:>maxima5$}  {:>maxima2$}  {:>maxima3$}  {:>maxima4$}  {}",
-                    "PID",
-                    "PPID",
-                    "USER",
-                    "VM_RSS",
-                    "CPU%",
-                    " ",
-                    "CMD_LINE",
-                    maxima0 = maxima.0,
-                    maxima1 = maxima.1,
-                    maxima2 = maxima.2,
-                    maxima3 = maxima.3,
-                    maxima4 = maxima.4,
-                    maxima5 = maxima.5,
+                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}  {state:>max_state$}  {cmd_line}",
+                    pid = "PID",
+                    ppid ="PPID",
+                    username = "USER",
+                    vm_rss = "VM_RSS",
+                    cpu_percent = "CPU%",
+                    state = " ",
+                    cmd_line = "CMD_LINE",
+                    max_pid = maxima.pid,
+                    max_ppid = maxima.ppid,
+                    max_username = maxima.username,
+                    max_vm_rss = maxima.vm_rss,
+                    max_cpu_percent = maxima.cpu_percent,
+                    max_state = maxima.state,
                 ),
                 grid,
                 Color::Black,
@@ -280,34 +349,35 @@ impl Component for ProcessList {
             );
 
             let mut y_offset = 0;
-            let p_len = processes.len();
-            for (pid, ppid, vm_rss, cpu, state, cmd_line, username) in
-                processes.into_iter().skip(pages * height)
-            {
+
+            let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
+            processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
+
+            for p in processes.iter().skip(pages * height).take(height) {
                 let fg_color = Color::Default;
                 let bg_color = if pages * height + y_offset == self.cursor {
                     Color::Byte(235)
                 } else {
                     Color::Default
                 };
-                match executable_path_color(&cmd_line) {
+                match executable_path_color(&p.cmd_line) {
                     Ok((path, bin, rest)) => {
                         let (x, y) = write_string_to_grid(
                             &format!(
-                            "{:>maxima0$}  {:>maxima1$}  {:>maxima5$}  {:>maxima2$}  {:>maxima3$}%  {:>maxima4$}",
-                            pid,
-                            ppid,
-                            username,
-                            vm_rss,
-                            cpu,
-                            state,
-                            maxima0 = maxima.0,
-                            maxima1 = maxima.1,
-                            maxima2 = maxima.2,
-                            maxima3 = maxima.3,
-                            maxima4 = maxima.4,
-                            maxima5 = maxima.5,
-                        ),
+                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
+                            pid = p.pid,
+                            ppid = p.ppid,
+                            username = p.username,
+                            vm_rss = p.vm_rss,
+                            cpu_percent = p.cpu_percent,
+                            state = p.state,
+                            max_pid = maxima.pid,
+                            max_ppid = maxima.ppid,
+                            max_username = maxima.username,
+                            max_vm_rss = maxima.vm_rss,
+                            max_cpu_percent = maxima.cpu_percent,
+                            max_state = maxima.state,
+                                ),
                             grid,
                             fg_color,
                             bg_color,
@@ -352,19 +422,19 @@ impl Component for ProcessList {
                     Err((bin, rest)) => {
                         let(x,y)=write_string_to_grid(
                             &format!(
-                                "{:>maxima0$}  {:>maxima1$}  {:>maxima5$}  {:>maxima2$}  {:>maxima3$}%  {:>maxima4$}  ",
-                                pid,
-                                ppid,
-                                username,
-                                vm_rss,
-                                cpu,
-                                state,
-                                maxima0 = maxima.0,
-                                maxima1 = maxima.1,
-                                maxima2 = maxima.2,
-                                maxima3 = maxima.3,
-                                maxima4 = maxima.4,
-                                maxima5 = maxima.5,
+                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
+                            pid = p.pid,
+                            ppid = p.ppid,
+                            username = p.username,
+                            vm_rss = p.vm_rss,
+                            cpu_percent = p.cpu_percent,
+                            state = p.state,
+                            max_pid = maxima.pid,
+                            max_ppid = maxima.ppid,
+                            max_username = maxima.username,
+                            max_vm_rss = maxima.vm_rss,
+                            max_cpu_percent = maxima.cpu_percent,
+                            max_state = maxima.state,
                                 ),
                                 grid,
                                 fg_color,
@@ -535,7 +605,8 @@ fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
     Ok(ret)
 }
 
-fn executable_path_color(p: &str) -> Result<(&str, &str, &str), (&str, &str)> {
+fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str, &str)> {
+    let p = &p.0;
     if !p.starts_with("/") {
         return if let Some(first_whitespace) = p.as_bytes().iter().position(|c| *c == b' ') {
             Err(p.split_at(first_whitespace))

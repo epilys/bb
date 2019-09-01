@@ -347,7 +347,15 @@ impl Component for KernelMetrics {
         let loadavgs = get_loadavg();
         for (i, avg) in loadavgs.into_iter().enumerate() {
             write_string_to_grid(
-                avg,
+                &format!(
+                    "{}  {}",
+                    match i {
+                        0 => " 1",
+                        1 => " 5",
+                        _ => "15",
+                    },
+                    avg
+                ),
                 grid,
                 Color::Default,
                 Color::Default,
@@ -355,6 +363,10 @@ impl Component for KernelMetrics {
                 (pos_inc(upper_left, (0, i + 1)), bottom_right),
                 false,
             );
+            grid[pos_inc(upper_left, (0, i + 1))].set_attrs(Attr::Bold);
+            grid[pos_inc(upper_left, (1, i + 1))].set_attrs(Attr::Bold);
+            grid[pos_inc(upper_left, (0, i + 1))].set_fg(Color::Byte(8));
+            grid[pos_inc(upper_left, (1, i + 1))].set_fg(Color::Byte(8));
         }
     }
 

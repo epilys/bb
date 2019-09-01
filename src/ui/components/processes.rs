@@ -87,8 +87,6 @@ pub struct ProcessList {
     dirty: bool,
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
-    /* refresh process list every 4 cycles */
-    cycle: u8,
 }
 
 #[derive(Debug)]
@@ -190,7 +188,6 @@ impl ProcessList {
             pid_max: usize::from_str(pid_max.trim()).unwrap(),
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
-            cycle: 0,
             height: 0,
             dirty: true,
         }
@@ -474,8 +471,6 @@ impl Component for ProcessList {
                     break;
                 }
             }
-            self.cycle += 1;
-            self.cycle %= 4;
         } else if old_cursor != self.cursor {
             let new_area = (
                 pos_inc(upper_left, (0, self.cursor - pages * height + 3)),

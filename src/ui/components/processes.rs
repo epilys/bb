@@ -85,11 +85,14 @@ pub struct ProcessList {
     cursor: usize,
     height: usize,
     dirty: bool,
+    maxima: ColumnWidthMaxima,
+    /* stop updating data */
+    freeze: bool,
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum State {
     /* Z  Zombie */
     Zombie,
@@ -189,6 +192,8 @@ impl ProcessList {
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
             height: 0,
+            maxima: ColumnWidthMaxima::new(),
+            freeze: false,
             dirty: true,
         }
     }
@@ -243,76 +248,91 @@ impl Component for ProcessList {
                 }
             }
         }
+
+        if !self.dirty && (!tick/* implies freeze */) && old_cursor != self.cursor {
+            /* Nothing to update */
+            return;
+        }
+
         let pages = self.cursor / height;
         if pages != old_pages {
             tick = true;
         }
 
-        if tick {
-            clear_area(grid, area);
+        if tick || self.freeze {
+            if tick || old_cursor != self.cursor {
+                clear_area(grid, area);
+            }
+
             dirty_areas.push_back(area);
 
-            self.processes.clear();
+            if !self.freeze {
+                self.processes.clear();
 
-            let cpu_stat = get_stat(&mut 0).remove(0);
+                let cpu_stat = get_stat(&mut 0).remove(0);
 
-            /* Keep tabs on biggest element in each column */
-            let mut maxima = ColumnWidthMaxima::new();
+                /* Keep tabs on biggest element in each column */
+                let mut maxima = ColumnWidthMaxima::new();
 
-            self.height = 0;
-            for entry in std::fs::read_dir("/proc/").unwrap() {
-                let dir = entry.unwrap();
-                if let Some(fname) = dir.file_name().to_str() {
-                    if !fname.chars().all(|c| c.is_numeric()) {
+                self.height = 0;
+                for entry in std::fs::read_dir("/proc/").unwrap() {
+                    let dir = entry.unwrap();
+                    if let Some(fname) = dir.file_name().to_str() {
+                        if !fname.chars().all(|c| c.is_numeric()) {
+                            continue;
+                        }
+                    } else {
                         continue;
                     }
-                } else {
-                    continue;
+
+                    let process = if let Ok(p) = get_pid_info(dir.path()) {
+                        p
+                    } else {
+                        continue;
+                    };
+
+                    if process.cmd_line.is_empty() {
+                        /* This is a kernel thread, skip for now */
+                        continue;
+                    }
+
+                    let process_display = ProcessDisplay {
+                        i: process.pid,
+                        pid: PidString(process.pid.to_string()),
+                        ppid: PpidString(process.ppid.to_string()),
+                        vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
+                        cpu_percent: (100.0
+                            * ((process.utime
+                                - self
+                                    .processes_times
+                                    .get(&process.pid)
+                                    .map(|v| *v)
+                                    .unwrap_or(process.utime))
+                                as f64
+                                / ((cpu_stat.total_time() - self.cpu_stat.total_time()) as f64)))
+                            as usize,
+                        utime: process.utime,
+                        state: process.state,
+                        cmd_line: CmdLineString(process.cmd_line),
+                        username: UserString(crate::ui::username(process.uid)),
+                    };
+
+                    self.processes_times
+                        .insert(process.pid, process_display.utime);
+
+                    maxima.pid = std::cmp::max(maxima.pid, process_display.pid.len());
+                    maxima.ppid = std::cmp::max(maxima.ppid, process_display.ppid.len());
+                    maxima.vm_rss = std::cmp::max(maxima.vm_rss, process_display.vm_rss.len());
+                    maxima.username =
+                        std::cmp::max(maxima.username, process_display.username.len());
+                    self.processes.push(process_display);
+                    self.height += 1;
                 }
-
-                let process = if let Ok(p) = get_pid_info(dir.path()) {
-                    p
-                } else {
-                    continue;
-                };
-
-                if process.cmd_line.is_empty() {
-                    /* This is a kernel thread, skip for now */
-                    continue;
-                }
-
-                let process_display = ProcessDisplay {
-                    i: process.pid,
-                    pid: PidString(process.pid.to_string()),
-                    ppid: PpidString(process.ppid.to_string()),
-                    vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
-                    cpu_percent: (100.0
-                        * ((process.utime
-                            - self
-                                .processes_times
-                                .get(&process.pid)
-                                .map(|v| *v)
-                                .unwrap_or(process.utime)) as f64
-                            / ((cpu_stat.total_time() - self.cpu_stat.total_time()) as f64)))
-                        as usize,
-                    utime: process.utime,
-                    state: process.state,
-                    cmd_line: CmdLineString(process.cmd_line),
-                    username: UserString(crate::ui::username(process.uid)),
-                };
-
-                self.processes_times
-                    .insert(process.pid, process_display.utime);
-
-                maxima.pid = std::cmp::max(maxima.pid, process_display.pid.len());
-                maxima.ppid = std::cmp::max(maxima.ppid, process_display.ppid.len());
-                maxima.vm_rss = std::cmp::max(maxima.vm_rss, process_display.vm_rss.len());
-                maxima.username = std::cmp::max(maxima.username, process_display.username.len());
-                self.processes.push(process_display);
-                self.height += 1;
+                self.cpu_stat = cpu_stat;
+                self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
+                self.maxima = maxima;
             }
-            self.cpu_stat = cpu_stat;
-            self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
+
             /* Write column headers */
             let (x, y) = write_string_to_grid(
                 &format!(
@@ -324,12 +344,12 @@ impl Component for ProcessList {
                     cpu_percent = "CPU%",
                     state = " ",
                     cmd_line = "CMD_LINE",
-                    max_pid = maxima.pid,
-                    max_ppid = maxima.ppid,
-                    max_username = maxima.username,
-                    max_vm_rss = maxima.vm_rss,
-                    max_cpu_percent = maxima.cpu_percent,
-                    max_state = maxima.state,
+                    max_pid = self.maxima.pid,
+                    max_ppid = self.maxima.ppid,
+                    max_username = self.maxima.username,
+                    max_vm_rss = self.maxima.vm_rss,
+                    max_cpu_percent = self.maxima.cpu_percent,
+                    max_state = self.maxima.state,
                 ),
                 grid,
                 Color::Black,
@@ -368,12 +388,12 @@ impl Component for ProcessList {
                             vm_rss = p.vm_rss,
                             cpu_percent = p.cpu_percent,
                             state = p.state,
-                            max_pid = maxima.pid,
-                            max_ppid = maxima.ppid,
-                            max_username = maxima.username,
-                            max_vm_rss = maxima.vm_rss,
-                            max_cpu_percent = maxima.cpu_percent,
-                            max_state = maxima.state,
+                            max_pid = self.maxima.pid,
+                            max_ppid = self.maxima.ppid,
+                            max_username = self.maxima.username,
+                            max_vm_rss = self.maxima.vm_rss,
+                            max_cpu_percent = self.maxima.cpu_percent,
+                            max_state = self.maxima.state,
                                 ),
                             grid,
                             fg_color,
@@ -382,6 +402,25 @@ impl Component for ProcessList {
                             (pos_inc(upper_left, (0, y_offset + 3)), bottom_right),
                             false,
                         );
+                        if p.state == State::Running {
+                            grid[pos_inc(
+                                upper_left,
+                                (
+                                    2 * 5
+                                        + self.maxima.pid
+                                        + self.maxima.ppid
+                                        + self.maxima.username
+                                        + self.maxima.vm_rss
+                                        + self.maxima.cpu_percent,
+                                    y_offset + 3,
+                                ),
+                            )]
+                            .set_fg(if self.freeze {
+                                Color::Byte(12)
+                            } else {
+                                Color::Byte(10)
+                            });
+                        }
                         let (x, _) = write_string_to_grid(
                             path,
                             grid,
@@ -394,7 +433,11 @@ impl Component for ProcessList {
                         let (x, y) = write_string_to_grid(
                             bin,
                             grid,
-                            Color::Byte(34),
+                            if self.freeze {
+                                Color::Byte(32)
+                            } else {
+                                Color::Byte(34)
+                            },
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (x - 1, y_offset + 3)), bottom_right),
@@ -417,7 +460,7 @@ impl Component for ProcessList {
                         );
                     }
                     Err((bin, rest)) => {
-                        let(x,y)=write_string_to_grid(
+                        let (x,y) = write_string_to_grid(
                             &format!(
                             "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
                             pid = p.pid,
@@ -426,24 +469,48 @@ impl Component for ProcessList {
                             vm_rss = p.vm_rss,
                             cpu_percent = p.cpu_percent,
                             state = p.state,
-                            max_pid = maxima.pid,
-                            max_ppid = maxima.ppid,
-                            max_username = maxima.username,
-                            max_vm_rss = maxima.vm_rss,
-                            max_cpu_percent = maxima.cpu_percent,
-                            max_state = maxima.state,
+                            max_pid = self.maxima.pid,
+                            max_ppid = self.maxima.ppid,
+                            max_username = self.maxima.username,
+                            max_vm_rss = self.maxima.vm_rss,
+                            max_cpu_percent = self.maxima.cpu_percent,
+                            max_state = self.maxima.state,
+                            ),
+                            grid,
+                            fg_color,
+                            bg_color,
+                            Attr::Default,
+                            (pos_inc(upper_left, (0, y_offset + 3)), bottom_right),
+                            false,
+                        );
+                        if p.state == State::Running {
+                            grid[pos_inc(
+                                upper_left,
+                                (
+                                    2 * 5
+                                        + 1
+                                        + self.maxima.pid
+                                        + self.maxima.ppid
+                                        + self.maxima.username
+                                        + self.maxima.vm_rss
+                                        + self.maxima.cpu_percent,
+                                    y_offset + 3,
                                 ),
-                                grid,
-                                fg_color,
-                                bg_color,
-                                Attr::Default,
-                                (pos_inc(upper_left, (0, y_offset + 3)), bottom_right),
-                                false,
-                                );
+                            )]
+                            .set_fg(if self.freeze {
+                                Color::Byte(12)
+                            } else {
+                                Color::Byte(10)
+                            });
+                        }
                         let (x, y) = write_string_to_grid(
                             bin,
                             grid,
-                            Color::Byte(34),
+                            if self.freeze {
+                                Color::Byte(32)
+                            } else {
+                                Color::Byte(34)
+                            },
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (x - 1, y_offset + 3)), bottom_right),
@@ -495,6 +562,7 @@ impl Component for ProcessList {
     }
 
     fn process_event(&mut self, event: &mut UIEvent) {
+        let map = &self.get_shortcuts()[""];
         match event {
             UIEvent::Input(Key::Up) => {
                 self.page_movement = Some(PageMovement::Up);
@@ -520,6 +588,10 @@ impl Component for ProcessList {
                 self.page_movement = Some(PageMovement::End);
                 self.dirty = true;
             }
+            UIEvent::Input(k) if *k == map["freeze updates"] => {
+                self.freeze = !self.freeze;
+                self.dirty = true;
+            }
             _ => {}
         }
     }
@@ -529,6 +601,13 @@ impl Component for ProcessList {
     }
 
     fn set_dirty(&mut self) {}
+    fn get_shortcuts(&self) -> ShortcutMaps {
+        let mut map: ShortcutMap = Default::default();
+        map.insert("freeze updates", Key::Char('f'));
+        let mut ret: ShortcutMaps = Default::default();
+        ret.insert("".to_string(), map);
+        ret
+    }
 }
 
 /* proc file structure can be found in man 5 proc */

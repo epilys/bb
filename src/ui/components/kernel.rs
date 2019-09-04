@@ -1,3 +1,24 @@
+/*
+ * bb
+ *
+ * Copyright 2019 Manos Pitsidianakis
+ *
+ * This file is part of bb.
+ *
+ * bb is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * bb is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with bb. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 use super::*;
 use std::fs::File;
 use std::io::prelude::*;
@@ -61,6 +82,8 @@ impl Component for KernelMetrics {
         let bottom_right = bottom_right!(area);
         let total_rows = height!(area);
         let total_cols = width!(area);
+
+        let show_all_cores: bool = total_rows > 1 /* hostname, kernel version, uptime row */ + 1 /* CPU total bar row */ + 0 /* padding rows */ + 1 /* RAM row */;
         dirty_areas.push_back(area);
         if self.dirty {
             clear_area(grid, area);
@@ -82,7 +105,7 @@ impl Component for KernelMetrics {
                 ((x + 2, y), bottom_right),
                 false,
             );
-            let (x, y) = write_string_to_grid(
+            write_string_to_grid(
                 &self.kernel,
                 grid,
                 Color::Default,
@@ -139,6 +162,9 @@ impl Component for KernelMetrics {
         let mut boot_time: usize = 0;
         for (i, cpu_stat) in get_stat(&mut boot_time).into_iter().enumerate() {
             let (mut x, y) = if i > 0 {
+                if !show_all_cores {
+                    break;
+                }
                 write_string_to_grid(
                     &format!("CPU{}", i),
                     grid,
@@ -182,6 +208,9 @@ impl Component for KernelMetrics {
                     .total_time()
                     .saturating_sub(self.cpu_stat[i].total_time())) as f64)
                 * bar_max as f64) as usize;
+            if bar_length >= width!(area) {
+                return;
+            }
 
             let mut x_offset = 0;
             while x_offset < bar_length {
@@ -215,8 +244,6 @@ impl Component for KernelMetrics {
         self.boot_time = boot_time;
 
         /* Draw RAM usage bar */
-
-        y_offset += 1;
 
         let bar_max = bar_max + 6;
         let (available, total) = get_mem_info();
@@ -294,6 +321,9 @@ impl Component for KernelMetrics {
         /* CPU Times */
         let mut cpu_column_width = "CPU".len();
         let upper_left = pos_inc(upper_left, (bar_max + 5, 2));
+        if get_x(upper_left) >= get_x(bottom_right) {
+            return;
+        }
         write_string_to_grid(
             "CPU%",
             grid,
@@ -333,8 +363,10 @@ impl Component for KernelMetrics {
         }
 
         /* Load average */
-        let mut load_column_width = "LOAD_AVG".len();
         let upper_left = pos_inc(upper_left, (cpu_column_width + 3, 0));
+        if get_x(upper_left) >= get_x(bottom_right) {
+            return;
+        }
         write_string_to_grid(
             "LOAD_AVG",
             grid,
@@ -435,8 +467,10 @@ fn get_cpu_times(
 
     macro_rules! val {
         ($tag:literal, $field:tt) => {
-            let percent = (cpu_stat.$field - old_cpu_stat.$field) as f64
-                / (cpu_stat.total_time() - old_cpu_stat.total_time()) as f64;
+            let percent = (cpu_stat.$field.saturating_sub(old_cpu_stat.$field)) as f64
+                / (cpu_stat
+                    .total_time()
+                    .saturating_sub(old_cpu_stat.total_time())) as f64;
             let s = format!("{:.1}%", percent * 100.0);
             ret.push((
                 $tag,

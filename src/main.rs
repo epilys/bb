@@ -34,10 +34,12 @@ use crossbeam::channel::{bounded, tick};
 use crossbeam::select;
 use libc::c_int;
 use std::io::Error;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod ui;
 use ui::*;
+mod thread;
+use thread::start_thread;
 
 fn notify(signals: &[c_int]) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
     let (s, r) = bounded(100);
@@ -69,66 +71,62 @@ fn main() -> Result<(), Error> {
 
     let receiver = state.receiver();
 
-    let window = Box::new(HSplit::new(
+    /* Start data update thread (src/thread.rs) */
+    let (s, r) = start_thread();
+    let window = Box::new(Window::new(
         Box::new(ui::components::KernelMetrics::new()),
-        Box::new(ui::components::ProcessList::new()),
-        83,
-        false,
+        Box::new(ui::components::ProcessList::new(s, r)),
     ));
 
     state.register_component(window);
 
     /* Keep track of the input mode. See ui::UIMode for details */
     'main: loop {
-        'inner: loop {
-            /* Poll on all channels. Currently we have the input channel for stdin, watching events and the signal watcher. */
-            select! {
-                recv(ticker) -> _ => {
-                    state.redraw(true);
-                },
-                recv(signal_recvr) -> sig => {
-                    eprintln!("got signal {:?}", sig);
-                    match sig.unwrap() {
-                        signal_hook::SIGWINCH => {
-                            state.update_size();
-                            state.render();
-                            state.redraw(true);
-                        },
-                        _ => {}
-                    }
-                },
-                recv(receiver) -> msg => {
-                    match msg.unwrap() {
-                        ThreadEvent::Input(Key::Ctrl('z')) => {
-                            state.switch_to_main_screen();
-                            //_thread_handler.join().expect("Couldn't join on the associated thread");
-                            let self_pid = nix::unistd::Pid::this();
-                            nix::sys::signal::kill(self_pid, nix::sys::signal::Signal::SIGSTOP).unwrap();
-                            state.switch_to_alternate_screen();
-                            state.restore_input();
-                            // BUG: thread sends input event after one received key
-                            state.update_size();
-                            state.render();
-                            state.redraw(true);
-                        },
-                        ThreadEvent::Input(k) => {
-                            match k {
-                                Key::Char('q') | Key::Char('Q') => {
-                                    drop(state);
-                                    break 'main;
-                                },
-                                key  => {
-                                    state.rcv_event(UIEvent::Input(key));
-                                    state.redraw(false);
-                                },
-                            }
-                        },
-                        ThreadEvent::UIEvent(_) => {
-                        },
-                    }
-                },
-            }
-        } // end of 'inner
+        /* Poll on all channels. Currently we have the input channel for stdin, watching events and the signal watcher. */
+        select! {
+            recv(ticker) -> _ => {
+                state.redraw(true);
+            },
+            recv(signal_recvr) -> sig => {
+                eprintln!("got signal {:?}", sig);
+                match sig.unwrap() {
+                    signal_hook::SIGWINCH => {
+                        state.update_size();
+                        state.render();
+                        state.redraw(true);
+                    },
+                    _ => {}
+                }
+            },
+            recv(receiver) -> msg => {
+                match msg.unwrap() {
+                    ThreadEvent::Input(Key::Ctrl('z')) => {
+                        state.switch_to_main_screen();
+                        //_thread_handler.join().expect("Couldn't join on the associated thread");
+                        let self_pid = nix::unistd::Pid::this();
+                        nix::sys::signal::kill(self_pid, nix::sys::signal::Signal::SIGSTOP).unwrap();
+                        state.switch_to_alternate_screen();
+                        state.restore_input();
+                        // BUG: thread sends input event after one received key
+                        state.update_size();
+                        state.render();
+                        state.redraw(true);
+                    },
+                    ThreadEvent::Input(k) => {
+                        match k {
+                            Key::Char('q') | Key::Char('Q') => {
+                                drop(state);
+                                break 'main;
+                            },
+                            key  => {
+                                state.rcv_event(UIEvent::Input(key));
+                                state.redraw(false);
+                            },
+                        }
+                    },
+                }
+            },
+        }
     }
     Ok(())
 }

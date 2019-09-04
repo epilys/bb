@@ -1,27 +1,26 @@
 /*
- * meli - ui crate.
+ * bb
  *
- * Copyright 2017-2018 Manos Pitsidianakis
+ * Copyright 2019 Manos Pitsidianakis
  *
- * This file is part of meli.
+ * This file is part of bb.
  *
- * meli is free software: you can redistribute it and/or modify
+ * bb is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * meli is distributed in the hope that it will be useful,
+ * bb is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with meli. If not, see <http://www.gnu.org/licenses/>.
+ * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
 
 use crate::crossbeam::*;
 
-use super::*;
 use std::fmt;
 use std::io;
 use termion::event::Event as TermionEvent;
@@ -160,7 +159,7 @@ pub fn get_events(
     for c in stdin.events() {
         select! {
             default => {},
-            recv(rx) -> val => {
+            recv(rx) -> _ => {
                 return;
             }
         };
@@ -235,5 +234,3 @@ derive_csi_sequence!(
 
 pub const BRACKET_PASTE_START: &[u8] = b"\x1B[200~";
 pub const BRACKET_PASTE_END: &[u8] = b"\x1B[201~";
-
-const FIELDS: &[&str] = &[];

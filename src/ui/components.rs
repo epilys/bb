@@ -1,22 +1,22 @@
 /*
- * meli - ui crate.
+ * bb
  *
- * Copyright 2017-2018 Manos Pitsidianakis
+ * Copyright 2019 Manos Pitsidianakis
  *
- * This file is part of meli.
+ * This file is part of bb.
  *
- * meli is free software: you can redistribute it and/or modify
+ * bb is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * meli is distributed in the hope that it will be useful,
+ * bb is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with meli. If not, see <http://www.gnu.org/licenses/>.
+ * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*!
@@ -26,47 +26,23 @@ See the `Component` Trait for more details.
 */
 
 use super::*;
-use crate::ui::terminal::*;
-use crate::ui::types::*;
 mod utilities;
 pub use utilities::*;
 
 mod kernel;
 pub use kernel::*;
-mod processes;
+pub mod processes;
 pub use processes::*;
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Display};
 
-use super::{Key, StatusEvent, UIEvent};
+use super::{Key, UIEvent};
 /// The upper and lower boundary char.
 const HORZ_BOUNDARY: char = '─';
 /// The left and right boundary char.
 const VERT_BOUNDARY: char = '│';
-
-/// The top-left corner
-const _TOP_LEFT_CORNER: char = '┌';
-/// The top-right corner
-const _TOP_RIGHT_CORNER: char = '┐';
-/// The bottom-left corner
-const _BOTTOM_LEFT_CORNER: char = '└';
-/// The bottom-right corner
-const _BOTTOM_RIGHT_CORNER: char = '┘';
-
-const LIGHT_VERTICAL_AND_RIGHT: char = '├';
-
-const _LIGHT_VERTICAL_AND_LEFT: char = '┤';
-
-const LIGHT_DOWN_AND_HORIZONTAL: char = '┬';
-
-const LIGHT_UP_AND_HORIZONTAL: char = '┴';
-
-const _DOUBLE_DOWN_AND_RIGHT: char = '╔';
-const _DOUBLE_DOWN_AND_LEFT: char = '╗';
-const _DOUBLE_UP_AND_LEFT: char = '╝';
-const _DOUBLE_UP_AND_RIGHT: char = '╚';
 
 pub type ShortcutMap = HashMap<&'static str, Key>;
 pub type ShortcutMaps = HashMap<String, ShortcutMap>;
@@ -91,22 +67,6 @@ pub trait Component: Display + Debug + Send {
         Default::default()
     }
 }
-
-/*
-pub(crate) fn is_box_char(ch: char) -> bool {
-    match ch {
-        HORZ_BOUNDARY | VERT_BOUNDARY => true,
-        _ => false,
-    }
-}
-
- * pub(crate) fn is_box_char(ch: char) -> bool {
- *  match ch {
- *      '└' | '─' | '┘' | '┴' | '┌' | '│' | '├' | '┐' | '┬' | '┤' | '┼' | '╷' | '╵' | '╴' | '╶' => true,
- *      _ => false,
- *  }
- * }
- */
 
 fn bin_to_ch(b: u32) -> char {
     match b {
@@ -376,19 +336,20 @@ pub fn create_box(grid: &mut CellBuffer, area: Area) {
     let upper_left = upper_left!(area);
     let bottom_right = bottom_right!(area);
 
-    for x in get_x(upper_left)..get_x(bottom_right) {
-        grid[(x, get_y(upper_left))].set_ch(HORZ_BOUNDARY);
-        grid[(x, get_y(bottom_right))].set_ch(HORZ_BOUNDARY);
-        grid[(x, get_y(bottom_right))].set_fg(Color::Byte(240));
+    for x in get_x(upper_left)..=get_x(bottom_right) {
+        //grid[(x, get_y(upper_left))].set_ch(HORZ_BOUNDARY);
+        //grid[(x, get_y(bottom_right))].set_ch(HORZ_BOUNDARY);
+        //grid[(x, get_y(bottom_right))].set_ch('▒');
+        //grid[(x, get_y(bottom_right))].set_fg(Color::Byte(240));
     }
 
-    for y in get_y(upper_left)..get_y(bottom_right) {
-        grid[(get_x(upper_left), y)].set_ch(VERT_BOUNDARY);
-        grid[(get_x(bottom_right), y)].set_ch(VERT_BOUNDARY);
+    for y in get_y(upper_left)..=get_y(bottom_right) {
+        //grid[(get_x(upper_left), y)].set_ch(VERT_BOUNDARY);
+        grid[(get_x(bottom_right), y)].set_ch('▒');
         grid[(get_x(bottom_right), y)].set_fg(Color::Byte(240));
     }
-    set_and_join_box(grid, upper_left, HORZ_BOUNDARY);
-    set_and_join_box(grid, set_x(upper_left, get_x(bottom_right)), HORZ_BOUNDARY);
-    set_and_join_box(grid, set_y(upper_left, get_y(bottom_right)), VERT_BOUNDARY);
-    set_and_join_box(grid, bottom_right, VERT_BOUNDARY);
+    //set_and_join_box(grid, upper_left, HORZ_BOUNDARY);
+    //set_and_join_box(grid, set_x(upper_left, get_x(bottom_right)), HORZ_BOUNDARY);
+    //set_and_join_box(grid, set_y(upper_left, get_y(bottom_right)), VERT_BOUNDARY);
+    //set_and_join_box(grid, bottom_right, VERT_BOUNDARY);
 }

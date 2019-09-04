@@ -18,6 +18,7 @@ termion = "1.5.3"
 libc = "0.2.62"
 unicode-segmentation = "1.2.1"
 nix = "0.15.0"
+cassowary = "^0.3.0"
 
 [profile.release]
 opt-level = 'z'  # Optimize for size.

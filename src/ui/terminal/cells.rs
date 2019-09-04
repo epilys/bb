@@ -1,22 +1,22 @@
 /*
- * meli - ui crate.
+ * bb
  *
- * Copyright 2017-2018 Manos Pitsidianakis
+ * Copyright 2019 Manos Pitsidianakis
  *
- * This file is part of meli.
+ * This file is part of bb.
  *
- * meli is free software: you can redistribute it and/or modify
+ * bb is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * meli is distributed in the hope that it will be useful,
+ * bb is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with meli. If not, see <http://www.gnu.org/licenses/>.
+ * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*!
@@ -120,16 +120,6 @@ impl fmt::Debug for CellBuffer {
 }
 
 impl CellBuffer {
-    pub fn area(&self) -> Area {
-        (
-            (0, 0),
-            (self.cols.saturating_sub(1), self.rows.saturating_sub(1)),
-        )
-    }
-    pub fn set_cols(&mut self, new_cols: usize) {
-        self.cols = new_cols;
-    }
-
     /// Constructs a new `CellBuffer` with the given number of columns and rows, using the given
     /// `cell` as a blank.
     pub fn new(cols: usize, rows: usize, cell: Cell) -> CellBuffer {
@@ -157,34 +147,6 @@ impl CellBuffer {
         self.buf = newbuf;
         self.cols = newcols;
         self.rows = newrows;
-    }
-
-    pub fn split_newlines(self) -> Self {
-        let lines: Vec<&[Cell]> = self.split(|cell| cell.ch() == '\n').collect();
-        let height = lines.len();
-        let width = lines.iter().map(|l| l.len()).max().unwrap_or(0) + 1;
-        let mut content = CellBuffer::new(width, height, Cell::with_char(' '));
-        {
-            let mut x;
-            let c_slice: &mut [Cell] = &mut content;
-            for (y, l) in lines.iter().enumerate() {
-                let y_r = y * width;
-                x = l.len() + y_r;
-                c_slice[y_r..x].copy_from_slice(l);
-                c_slice[x].set_ch('\n');
-            }
-        }
-        content
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.buf.is_empty()
-    }
-
-    pub fn empty(&mut self) {
-        self.buf.clear();
-        self.cols = 0;
-        self.rows = 0;
     }
 }
 
@@ -326,23 +288,6 @@ impl Cell {
     /// ```
     pub fn with_char(ch: char) -> Cell {
         Cell::new(ch, Color::Default, Color::Default, Attr::Default)
-    }
-
-    /// Creates a new `Cell` with the given style and a blank `char`.
-    ///
-    /// # Examples
-    ///
-    /// ```norun
-    /// use rustty::{Cell, Color, Attr};
-    ///
-    /// let mut cell = Cell::with_style(Color::Default, Color::Red, Attr::Bold);
-    /// assert_eq!(cell.fg(), Color::Default);
-    /// assert_eq!(cell.bg(), Color::Red);
-    /// assert_eq!(cell.attrs(), Attr::Bold);
-    /// assert_eq!(cell.ch(), ' ');
-    /// ```
-    pub fn with_style(fg: Color, bg: Color, attr: Attr) -> Cell {
-        Cell::new(' ', fg, bg, attr)
     }
 
     /// Returns the `Cell`'s character.
@@ -500,6 +445,7 @@ impl Default for Cell {
 /// // Basic colors are also 8-bit colors (but not vice-versa).
 /// assert_eq!(red.as_byte(), fancy.as_byte())
 /// ```
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
     Black,
@@ -567,6 +513,7 @@ impl Color {
 /// // Combination.
 /// let comb = Attr::UnderlineReverse;
 /// ```
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Attr {
     Default = 0b000,
@@ -577,103 +524,6 @@ pub enum Attr {
     BoldReverse = 0b101,
     UnderlineReverse = 0b110,
     BoldReverseUnderline = 0b111,
-}
-
-// TODO: word break.
-pub fn copy_area_with_break(
-    grid_dest: &mut CellBuffer,
-    grid_src: &CellBuffer,
-    dest: Area,
-    src: Area,
-) -> Pos {
-    if !is_valid_area!(dest) || !is_valid_area!(src) {
-        eprintln!(
-            "BUG: Invalid areas in copy_area:\n src: {:?}\n dest: {:?}",
-            src, dest
-        );
-        return upper_left!(dest);
-    }
-
-    if grid_src.is_empty() || grid_dest.is_empty() {
-        return upper_left!(dest);
-    }
-
-    let mut ret = bottom_right!(dest);
-    let mut src_x = get_x(upper_left!(src));
-    let mut src_y = get_y(upper_left!(src));
-
-    'y_: for y in get_y(upper_left!(dest))..=get_y(bottom_right!(dest)) {
-        'x_: for x in get_x(upper_left!(dest))..=get_x(bottom_right!(dest)) {
-            if grid_src[(src_x, src_y)].ch() == '\n' {
-                src_y += 1;
-                src_x = 0;
-                if src_y >= get_y(bottom_right!(src)) {
-                    ret.1 = y;
-                    break 'y_;
-                }
-                continue 'y_;
-            }
-
-            grid_dest[(x, y)] = grid_src[(src_x, src_y)];
-            src_x += 1;
-            if src_x >= get_x(bottom_right!(src)) {
-                src_y += 1;
-                src_x = 0;
-                if src_y >= get_y(bottom_right!(src)) {
-                    //clear_area(grid_dest, ((get_x(upper_left!(dest)), y), bottom_right!(dest)));
-                    ret.1 = y;
-                    break 'y_;
-                }
-                break 'x_;
-            }
-        }
-    }
-    ret
-}
-
-/// Copy a source `Area` to a destination.
-pub fn copy_area(grid_dest: &mut CellBuffer, grid_src: &CellBuffer, dest: Area, src: Area) -> Pos {
-    if !is_valid_area!(dest) || !is_valid_area!(src) {
-        eprintln!(
-            "BUG: Invalid areas in copy_area:\n src: {:?}\n dest: {:?}",
-            src, dest
-        );
-        return upper_left!(dest);
-    }
-
-    if grid_src.is_empty() || grid_dest.is_empty() {
-        return upper_left!(dest);
-    }
-
-    let mut ret = bottom_right!(dest);
-    let mut src_x = get_x(upper_left!(src));
-    let mut src_y = get_y(upper_left!(src));
-    let (cols, rows) = grid_src.size();
-    if src_x >= cols || src_y >= rows {
-        eprintln!("BUG: src area outside of grid_src in copy_area",);
-        return upper_left!(dest);
-    }
-
-    for y in get_y(upper_left!(dest))..=get_y(bottom_right!(dest)) {
-        'for_x: for x in get_x(upper_left!(dest))..=get_x(bottom_right!(dest)) {
-            grid_dest[(x, y)] = grid_src[(src_x, src_y)];
-            if src_x >= get_x(bottom_right!(src)) {
-                break 'for_x;
-            }
-            src_x += 1;
-        }
-        src_x = get_x(upper_left!(src));
-        src_y += 1;
-        if src_y > get_y(bottom_right!(src)) {
-            clear_area(
-                grid_dest,
-                ((get_x(upper_left!(dest)), y + 1), bottom_right!(dest)),
-            );
-            ret.1 = y;
-            break;
-        }
-    }
-    ret
 }
 
 /// Change foreground and background colors in an `Area`
@@ -692,11 +542,9 @@ pub fn change_colors(
         || y >= get_y(bounds)
         || x >= get_x(bounds)
     {
-        eprintln!("BUG: Invalid area in change_colors:\n area: {:?}", area);
         return;
     }
     if !is_valid_area!(area) {
-        eprintln!("BUG: Invalid area in change_colors:\n area: {:?}", area);
         return;
     }
     for y in get_y(upper_left!(area))..=get_y(bottom_right!(area)) {
@@ -751,7 +599,6 @@ pub fn write_string_to_grid(
         || y > get_y(bounds)
         || x > get_x(bounds)
     {
-        eprintln!(" Invalid area with string {} and area {:?}", s, area);
         return (x, y);
     }
     for c in s.chars() {

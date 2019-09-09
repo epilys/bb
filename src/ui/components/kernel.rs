@@ -156,7 +156,7 @@ impl Component for KernelMetrics {
         }
         /* Draw CPU usage bars */
 
-        let bar_max = (0.6 * total_cols as f32) as usize;
+        let bar_max = std::cmp::min((0.6 * total_cols as f32) as usize, total_cols);
 
         let old_cpu_stat = self.cpu_stat[0];
         let mut boot_time: usize = 0;
@@ -259,11 +259,14 @@ impl Component for KernelMetrics {
         let mut x = 0;
         /* Calculate spillover of mem_display string to available part of the bar in order to
          * paint it differently */
-        let cutoff = if mem_display_padding + mem_display.len() > mem_bar_length {
-            mem_bar_length - mem_display_padding
-        } else {
-            mem_display.len()
-        };
+        let cutoff = std::cmp::min(
+            mem_display.len() - 1,
+            if mem_display_padding + mem_display.len() > mem_bar_length {
+                mem_bar_length - mem_display_padding
+            } else {
+                mem_display.len()
+            },
+        );
 
         while x < mem_bar_length {
             if x == mem_display_padding {

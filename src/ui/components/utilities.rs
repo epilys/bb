@@ -122,8 +122,8 @@ pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
 /// A horizontally split in half container.
 #[derive(Debug)]
 pub struct Window {
-    top_bars: Box<Component>,
-    list: Box<Component>,
+    top_bars: Box<dyn Component>,
+    list: Box<dyn Component>,
 }
 
 impl fmt::Display for Window {
@@ -133,7 +133,7 @@ impl fmt::Display for Window {
 }
 
 impl Window {
-    pub fn new(top_bars: Box<Component>, list: Box<Component>) -> Self {
+    pub fn new(top_bars: Box<dyn Component>, list: Box<dyn Component>) -> Self {
         Window { top_bars, list }
     }
 }

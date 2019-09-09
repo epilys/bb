@@ -23,19 +23,23 @@
  * This library exports the public types and methods of its modules
  */
 
+#[allow(dead_code)]
 mod text_processing;
 pub use crate::ui::text_processing::*;
 #[macro_use]
+#[allow(dead_code)]
 mod types;
 pub use crate::ui::types::*;
 
 #[macro_use]
+#[allow(dead_code)]
 mod terminal;
 pub use crate::ui::terminal::*;
 
 pub mod state;
 pub use crate::ui::state::*;
 
+#[allow(dead_code)]
 pub mod components;
 pub use crate::ui::components::*;
 pub use crate::ui::username::*;

@@ -336,12 +336,13 @@ pub fn create_box(grid: &mut CellBuffer, area: Area) {
     let upper_left = upper_left!(area);
     let bottom_right = bottom_right!(area);
 
-    for x in get_x(upper_left)..=get_x(bottom_right) {
-        //grid[(x, get_y(upper_left))].set_ch(HORZ_BOUNDARY);
-        //grid[(x, get_y(bottom_right))].set_ch(HORZ_BOUNDARY);
-        //grid[(x, get_y(bottom_right))].set_ch('▒');
-        //grid[(x, get_y(bottom_right))].set_fg(Color::Byte(240));
+    /*for x in get_x(upper_left)..=get_x(bottom_right) {
+        grid[(x, get_y(upper_left))].set_ch(HORZ_BOUNDARY);
+        grid[(x, get_y(bottom_right))].set_ch(HORZ_BOUNDARY);
+        grid[(x, get_y(bottom_right))].set_ch('▒');
+        grid[(x, get_y(bottom_right))].set_fg(Color::Byte(240));
     }
+    */
 
     for y in get_y(upper_left)..=get_y(bottom_right) {
         //grid[(get_x(upper_left), y)].set_ch(VERT_BOUNDARY);

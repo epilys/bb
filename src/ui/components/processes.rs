@@ -465,7 +465,7 @@ impl Component for ProcessList {
                         );
                     }
                     Err((bin, rest)) => {
-                        let (x, y) = write_string_to_grid(
+                        let (x, _) = write_string_to_grid(
                             &format!(
                             "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
                             pid = p.pid,
@@ -572,7 +572,7 @@ impl Component for ProcessList {
             clear_area(grid, box_area);
             create_box(grid, box_area);
             let mut x = 1;
-            for (i, s) in SIGNAL_LIST.chunks(11).enumerate() {
+            for s in SIGNAL_LIST.chunks(11) {
                 let mut y = 0;
                 for sig in s {
                     write_string_to_grid(
@@ -753,7 +753,9 @@ impl Component for ProcessList {
                     kill(
                         nix::unistd::Pid::from_raw(processes[self.cursor].i),
                         nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
-                    );
+                    )
+                    .ok()
+                    .take();
                 }
                 self.mode = Normal;
                 self.dirty = true;

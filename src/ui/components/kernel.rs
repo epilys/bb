@@ -24,6 +24,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::str::FromStr;
 
+/* if cpu_no > MAX_CPU_ROWS, the cpu bars wrap in columns */
+static MAX_CPU_ROWS: usize = 5;
 /* Kernel metrics components */
 #[derive(Debug)]
 pub struct KernelMetrics {
@@ -65,6 +67,251 @@ impl KernelMetrics {
             dirty: true,
         }
     }
+
+    /* Returns width of entire widget */
+    fn draw_cpu_bars(&mut self, grid: &mut CellBuffer, area: Area) -> usize {
+        let upper_left = upper_left!(area);
+        let total_cols = width!(area);
+        /* no of bars is no of CPUs along with the total CPU usage  */
+        let cpu_no = self.cpu_stat.len();
+
+        /* Calculate how much horizontal space the labels (ie CPU0, CPU1, CPU2) take in order to
+         * distribute the remainder for each column, specifically the bars */
+        let mut cpu_label_space = 0;
+        let mut cpu_bar_columns = 0;
+        let mut i = 0;
+        while i < cpu_no {
+            /* Reserve space for CPU labels */
+            if i < 10 {
+                /* label will be " CPU0  " */
+                cpu_label_space += 7;
+            } else if i < 100 {
+                /* label will be " CPU32  " */
+                cpu_label_space += 8;
+            } else {
+                /* label will be " CPU128  " */
+                cpu_label_space += 9;
+            }
+            /* each column holds MAX_CPU_ROWS */
+            i += MAX_CPU_ROWS;
+            cpu_bar_columns += 1;
+        }
+        /* max width of each cpu bar */
+        let bar_width = if cpu_no < MAX_CPU_ROWS {
+            total_cols
+        } else {
+            (total_cols - cpu_label_space) / (cpu_bar_columns)
+        };
+
+        let mut boot_time: usize = 0;
+
+        let mut x_offset = 0;
+        for (i, cpu_stat) in get_stat(&mut boot_time).into_iter().enumerate() {
+            let label_len = if i < 10 {
+                8
+            } else if i < 100 {
+                9
+            } else {
+                10
+            };
+            let bottom_right = pos_inc(
+                upper_left,
+                (x_offset + bar_width + label_len, i % MAX_CPU_ROWS + 2),
+            );
+            let (mut x, y) = if i > 0 {
+                write_string_to_grid(
+                    &format!("CPU{}", i),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (
+                        pos_inc(upper_left, (x_offset, 2 + (i % MAX_CPU_ROWS))),
+                        bottom_right,
+                    ),
+                    false,
+                )
+            } else {
+                /* add padding */
+                let (x, y) = write_string_to_grid(
+                    "Σ",
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Default,
+                    (
+                        pos_inc(upper_left, (x_offset, 2 + i % MAX_CPU_ROWS)),
+                        bottom_right,
+                    ),
+                    false,
+                );
+                write_string_to_grid(
+                    "CPU",
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    ((x, y), bottom_right),
+                    false,
+                )
+            };
+            x += 2;
+
+            /* Calculate percentages for the cpu usage bar */
+            let busy_length = (cpu_stat.user_time + cpu_stat.system_time)
+                .saturating_sub(self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
+            let iowait_length = cpu_stat
+                .iowait_time
+                .saturating_sub(self.cpu_stat[i].iowait_time);
+            let bar_length: usize = (((busy_length + iowait_length) as f64
+                / (cpu_stat
+                    .total_time()
+                    .saturating_sub(self.cpu_stat[i].total_time())) as f64)
+                * bar_width as f64) as usize;
+            if bar_length >= width!(area) {
+                return x_offset;
+            }
+
+            /* Sometimes you draw the bar */
+            let mut _x_offset = 0;
+            while _x_offset < bar_length {
+                write_string_to_grid(
+                    "▁",
+                    grid,
+                    Color::Byte(235),
+                    Color::Byte(240),
+                    Attr::Default,
+                    ((x + _x_offset, y), bottom_right),
+                    false,
+                );
+                _x_offset += 1;
+            }
+            /* and sometimes the bar draws you */
+            while _x_offset <= bar_width {
+                write_string_to_grid(
+                    "▁",
+                    grid,
+                    Color::Byte(236),
+                    Color::Byte(235),
+                    Attr::Default,
+                    ((x + _x_offset, y), bottom_right),
+                    false,
+                );
+
+                _x_offset += 1;
+            }
+            self.cpu_stat[i] = cpu_stat;
+            if (i + 1) % MAX_CPU_ROWS == 0 {
+                x_offset += bar_width + label_len;
+            }
+        }
+
+        self.boot_time = boot_time;
+        if (self.cpu_stat.len()) % MAX_CPU_ROWS == 0 {
+            x_offset
+        } else {
+            x_offset
+                + bar_width
+                + if self.cpu_stat.len() < 10 {
+                    8
+                } else if self.cpu_stat.len() < 100 {
+                    9
+                } else {
+                    10
+                }
+        }
+    }
+
+    fn draw_ram_bar(&mut self, grid: &mut CellBuffer, area: Area, bars_max: usize) {
+        let upper_left = upper_left!(area);
+        let bottom_right = bottom_right!(area);
+        if bars_max == 0 {
+            /* In first draw, we have no cpu data since there is no previous measurement to use
+             * in the calculation so bars_max will be 0 */
+            return;
+        }
+        let (available, total) = get_mem_info();
+
+        /*  available_length == the length the spaces takes up in this case:
+         *  |********       | 50%
+         */
+        let available_length = ((available as f64 / total as f64) * bars_max as f64) as usize;
+        /*  mem_bar length == the length the asterisks takes up in this case:
+         *  |********       | 50%
+         */
+        let mem_bar_length = bars_max - available_length;
+        let mem_display = format!(
+            "RAM {}/{}",
+            Bytes((total - available) * 1024).as_convenient_string(),
+            Bytes(total * 1024).as_convenient_string()
+        );
+        /* Put the "RAM XGB/YGB" in the middle of the RAM bar */
+        let mem_display_padding = bars_max.saturating_sub(mem_display.len()) / 2;
+
+        let y_offset = 2 + MAX_CPU_ROWS;
+        let mut x = 0;
+        /* Calculate spillover of mem_display string to available part of the bar in order to
+         * paint it differently
+         *
+         * If "RAM 1GB/2GB" is printed over this bar:
+         *
+         *          |**********          |
+         *
+         * Some part of the string will have different colors than the rest of it, because the
+         * available part of the bar has different colors.
+         *
+         *                   cutoff
+         *                     ⇩
+         *                RAM 1GB/2GB
+         *                ↓ ↓ ↓ ↓ ↓ ↓ (string overlays asterisks and spaces)
+         *          |**********          |
+         * */
+        let cutoff = std::cmp::min(
+            mem_display.len(),
+            if mem_display_padding + mem_display.len() > mem_bar_length {
+                mem_bar_length - mem_display_padding
+            } else {
+                mem_display.len()
+            },
+        );
+
+        while x <= available_length + mem_bar_length {
+            if x == mem_display_padding {
+                let (_x, _) = write_string_to_grid(
+                    &mem_display[0..cutoff],
+                    grid,
+                    Color::White,
+                    Color::Byte(240),
+                    Attr::Default,
+                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
+                    false,
+                );
+                x += cutoff;
+            } else {
+                write_string_to_grid(
+                    "█",
+                    grid,
+                    Color::Byte(240),
+                    Color::Byte(235),
+                    Attr::Default,
+                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
+                    false,
+                );
+                x += 1;
+            }
+        }
+        if cutoff != mem_display.len() {
+            let (_x, _) = write_string_to_grid(
+                &mem_display[cutoff..],
+                grid,
+                Color::White,
+                Color::Byte(235),
+                Attr::Default,
+                (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
+                false,
+            );
+        }
+    }
 }
 
 impl Component for KernelMetrics {
@@ -80,10 +327,8 @@ impl Component for KernelMetrics {
         }
         let upper_left = upper_left!(area);
         let bottom_right = bottom_right!(area);
-        let total_rows = height!(area);
         let total_cols = width!(area);
 
-        let show_all_cores: bool = total_rows > 1 /* hostname, kernel version, uptime row */ + 1 /* CPU total bar row */ + 0 /* padding rows */ + 1 /* RAM row */;
         dirty_areas.push_back(area);
         if self.dirty {
             clear_area(grid, area);
@@ -149,181 +394,33 @@ impl Component for KernelMetrics {
             false,
         );
 
-        let mut y_offset = 2;
-
         if !tick {
             return;
         }
+        let old_cpu_stat = self.cpu_stat[0];
+
         /* Draw CPU usage bars */
 
-        let bar_max = std::cmp::min((0.6 * total_cols as f32) as usize, total_cols);
-
-        let old_cpu_stat = self.cpu_stat[0];
-        let mut boot_time: usize = 0;
-        for (i, cpu_stat) in get_stat(&mut boot_time).into_iter().enumerate() {
-            let (mut x, y) = if i > 0 {
-                if !show_all_cores {
-                    break;
-                }
-                write_string_to_grid(
-                    &format!("CPU{}", i),
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (pos_inc(upper_left, (2, 2 + i)), bottom_right),
-                    false,
-                )
-            } else {
-                /* add padding */
-                let (x, y) = write_string_to_grid(
-                    "Σ",
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Default,
-                    (pos_inc(upper_left, (2, 2 + i)), bottom_right),
-                    false,
-                );
-                write_string_to_grid(
-                    "CPU",
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    ((x, y), bottom_right),
-                    false,
-                )
-            };
-            x += 2;
-
-            /* Calculate percentages for the cpu usage bar */
-            let busy_length = (cpu_stat.user_time + cpu_stat.system_time)
-                .saturating_sub(self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
-            let iowait_length = cpu_stat
-                .iowait_time
-                .saturating_sub(self.cpu_stat[i].iowait_time);
-            let bar_length: usize = (((busy_length + iowait_length) as f64
-                / (cpu_stat
-                    .total_time()
-                    .saturating_sub(self.cpu_stat[i].total_time())) as f64)
-                * bar_max as f64) as usize;
-            if bar_length >= width!(area) {
-                return;
-            }
-
-            let mut x_offset = 0;
-            while x_offset < bar_length {
-                write_string_to_grid(
-                    "▁",
-                    grid,
-                    Color::Byte(235),
-                    Color::Byte(240),
-                    Attr::Default,
-                    ((x + x_offset, y), bottom_right),
-                    false,
-                );
-                x_offset += 1;
-            }
-            while x_offset < bar_max {
-                write_string_to_grid(
-                    "▁",
-                    grid,
-                    Color::Byte(236),
-                    Color::Byte(235),
-                    Attr::Default,
-                    ((x + x_offset, y), bottom_right),
-                    false,
-                );
-
-                x_offset += 1;
-            }
-            self.cpu_stat[i] = cpu_stat;
-            y_offset += 1;
-        }
-        self.boot_time = boot_time;
-
+        /* max width of cpu bar area */
+        let bars_max = (0.6 * total_cols as f32) as usize;
+        let cpu_widget_width = self.draw_cpu_bars(
+            grid,
+            (
+                pos_inc(upper_left, (2, 0)),
+                pos_inc(upper_left, (bars_max + 1, MAX_CPU_ROWS + 1)),
+            ),
+        );
         /* Draw RAM usage bar */
 
-        let bar_max = bar_max + 6;
-        let (available, total) = get_mem_info();
-        let available_length = ((available as f64 / total as f64) * bar_max as f64) as usize;
-        let mem_bar_length = bar_max - available_length;
-        let mem_display = format!(
-            "RAM {}/{}",
-            Bytes((total - available) * 1024).as_convenient_string(),
-            Bytes(total * 1024).as_convenient_string()
-        );
-        let mem_display_padding = bar_max.saturating_sub(mem_display.len()) / 2;
-
-        let mut x = 0;
-        /* Calculate spillover of mem_display string to available part of the bar in order to
-         * paint it differently */
-        let cutoff = std::cmp::min(
-            mem_display.len() - 1,
-            if mem_display_padding + mem_display.len() > mem_bar_length {
-                mem_bar_length - mem_display_padding
-            } else {
-                mem_display.len()
-            },
-        );
-
-        while x < mem_bar_length {
-            if x == mem_display_padding {
-                let (_x, _) = write_string_to_grid(
-                    &mem_display[0..cutoff],
-                    grid,
-                    Color::White,
-                    Color::Byte(240),
-                    Attr::Default,
-                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    false,
-                );
-                x += cutoff;
-            } else {
-                write_string_to_grid(
-                    "█",
-                    grid,
-                    Color::Byte(240),
-                    Color::Byte(235),
-                    Attr::Default,
-                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    false,
-                );
-                x += 1;
-            }
-        }
-        let x = if cutoff != mem_display.len() {
-            let (_x, _) = write_string_to_grid(
-                &mem_display[cutoff..],
-                grid,
-                Color::White,
-                Color::Byte(235),
-                Attr::Default,
-                (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                false,
-            );
-            _x
-        } else {
-            x
-        };
-        for x in x..bar_max {
-            write_string_to_grid(
-                " ",
-                grid,
-                Color::Default,
-                Color::Byte(235),
-                Attr::Default,
-                (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                false,
-            );
-        }
-
+        self.draw_ram_bar(grid, area, cpu_widget_width.saturating_sub(2));
         /* Various values table */
+        /* max width of cpu bar area */
+        let bars_max = (0.6 * total_cols as f32) as usize;
 
         /* CPU Times */
         let mut cpu_column_width = "CPU".len();
-        let upper_left = pos_inc(upper_left, (bar_max + 5, 2));
+        let upper_left = pos_inc(upper_left, (bars_max + 5, 2));
+        clear_area(grid, (upper_left, bottom_right));
         if get_x(upper_left) >= get_x(bottom_right) {
             return;
         }
@@ -336,6 +433,7 @@ impl Component for KernelMetrics {
             (upper_left, bottom_right),
             false,
         );
+
         for (i, (tag, s, fg_color, bg_color)) in get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
             .into_iter()
             .enumerate()

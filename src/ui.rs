@@ -47,9 +47,8 @@ pub mod username {
     use libc;
     use std::ptr::null_mut;
     /* taken from whoami-0.1.1 */
-    fn getpwuid(pw_uid: u32) -> libc::passwd {
+    fn getpwuid(pw_uid: u32, buffer: &mut [i8; 16384]) -> libc::passwd {
         let mut pwentp = null_mut();
-        let mut buffer = [0i8; 16384]; // from the man page
         #[cfg(any(
             target_os = "macos",
             target_os = "ios",
@@ -72,7 +71,7 @@ pub mod username {
                 pw_expire: 0,
             };
             unsafe {
-                libc::getpwuid_r(pw_uid, &mut pwent, &mut buffer[0], 16384, &mut pwentp);
+                libc::getpwuid_r(pw_uid, &mut pwent, buffer, 16384, &mut pwentp);
             }
 
             pwent
@@ -90,29 +89,25 @@ pub mod username {
             };
 
             unsafe {
-                libc::getpwuid_r(pw_uid, &mut pwent, &mut buffer[0], 16384, &mut pwentp);
+                libc::getpwuid_r(pw_uid, &mut pwent, buffer.as_mut_ptr(), 16384, &mut pwentp);
             }
 
             pwent
         }
     }
-    fn ptr_to_string(name: *mut i8) -> String {
-        let uname = name as *mut _ as *mut u8;
 
-        let s;
+    pub fn username(uid: u32) -> String {
+        let mut buffer = [0i8; 16384]; // from the man page
+        let pwent = getpwuid(uid, &mut buffer);
+
         let string;
-
         unsafe {
-            s = ::std::slice::from_raw_parts(uname, libc::strlen(name));
-            string = String::from_utf8_lossy(s).to_string();
+            string = ::std::ffi::CStr::from_ptr(pwent.pw_name)
+                .to_str()
+                .unwrap_or_else(|_| "")
+                .to_string();
         }
 
         string
-    }
-
-    pub fn username(uid: u32) -> String {
-        let pwent = getpwuid(uid);
-
-        ptr_to_string(pwent.pw_name)
     }
 }

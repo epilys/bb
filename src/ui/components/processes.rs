@@ -845,12 +845,14 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k) if *k == map["freeze updates"] && self.mode == Normal => {
                 self.freeze = !self.freeze;
+                self.force_redraw = true;
                 self.dirty = true;
             }
             UIEvent::Input(k) if *k == map["kill process"] => {
                 self.mode = Kill(0);
                 self.freeze = true;
                 self.dirty = true;
+                self.force_redraw = true;
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
                 self.mode = Normal;
@@ -880,9 +882,10 @@ impl Component for ProcessList {
                     *n = *n / 10;
                 } else if let Follow(ref mut p) = self.mode {
                     *p = *p / 10;
-                    self.dirty = true;
-                    self.force_redraw = true;
                 }
+                self.dirty = true;
+                self.force_redraw = true;
+            }
             UIEvent::Input(Key::Backspace) if self.filter_term.is_some() => {
                 let filter_term = self.filter_term.as_mut();
                 if filter_term.as_ref().unwrap().is_empty() {
@@ -908,6 +911,7 @@ impl Component for ProcessList {
                     .take();
                     self.mode = Normal;
                     self.dirty = true;
+                    self.force_redraw = true;
                 }
             }
             _ => {}

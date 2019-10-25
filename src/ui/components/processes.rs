@@ -20,7 +20,16 @@
  */
 
 use super::*;
-use crossbeam::{Receiver, Sender};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::PathBuf;
+use std::str::FromStr;
+#[derive(Debug)]
+pub struct ProcessData {
+    cpu_stat: Stat,
+    processes_times: HashMap<Pid, usize>,
+}
 
 const SIGNAL_LIST: &[(i32, &'static str)] = &[
     (1, "1 HUP"),
@@ -132,10 +141,9 @@ pub struct ProcessDisplay {
 /* process list components */
 #[derive(Debug)]
 pub struct ProcessList {
-    sender: Sender<Vec<ProcessDisplay>>,
-    rcver: Receiver<Vec<ProcessDisplay>>,
     page_movement: Option<PageMovement>,
     cpu_stat: Stat,
+    data: ProcessData,
     cursor: usize,
     height: usize,
     dirty: bool,
@@ -225,13 +233,16 @@ impl fmt::Display for ProcessList {
 }
 
 impl ProcessList {
-    pub fn new(sender: Sender<Vec<ProcessDisplay>>, rcver: Receiver<Vec<ProcessDisplay>>) -> Self {
+    pub fn new() -> Self {
+        let data = ProcessData {
+            cpu_stat: get_stat(&mut 0).remove(0),
+            processes_times: Default::default(),
+        };
         ProcessList {
-            sender,
-            rcver,
             cursor: 0,
             page_movement: None,
             cpu_stat: get_stat(&mut 0).remove(0),
+            data,
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
             height: 0,
@@ -302,18 +313,10 @@ impl Component for ProcessList {
             tick = true;
         }
 
-        let update_maxima = if tick && !self.freeze {
-            match self.rcver.recv_timeout(std::time::Duration::new(0, 0)) {
-                Ok(new_processes) => {
-                    self.sender
-                        .send(std::mem::replace(&mut self.processes, new_processes))
-                        .unwrap();
-                    true
-                }
-                Err(_) => false,
-            }
-        } else {
-            false
+        let update_maxima = tick && !self.freeze;
+
+        if update_maxima {
+            self.processes = get(&mut self.data);
         };
 
         if tick || self.freeze {
@@ -814,4 +817,171 @@ fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str,
             return Err((p, ""));
         }
     }
+}
+
+fn get(data: &mut ProcessData) -> Vec<ProcessDisplay> {
+    let mut processes = Vec::with_capacity(2048);
+    let cpu_stat = get_stat(&mut 0).remove(0);
+    for entry in std::fs::read_dir("/proc/").unwrap() {
+        let dir = entry.unwrap();
+        if let Some(fname) = dir.file_name().to_str() {
+            if !fname.chars().all(|c| c.is_numeric()) {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        let process = if let Ok(p) = get_pid_info(dir.path()) {
+            p
+        } else {
+            continue;
+        };
+
+        if process.cmd_line.is_empty() {
+            /* This is a kernel thread, skip for now */
+            continue;
+        }
+
+        let mut process_display = ProcessDisplay {
+            i: process.pid,
+            pid: PidString(process.pid.to_string()),
+            ppid: PpidString(process.ppid.to_string()),
+            vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
+            cpu_percent: (100.0
+                * ((process.utime
+                    - data
+                        .processes_times
+                        .get(&process.pid)
+                        .map(|v| *v)
+                        .unwrap_or(process.utime)) as f64
+                    / ((cpu_stat.total_time() - data.cpu_stat.total_time()) as f64)))
+                as usize,
+            utime: process.utime,
+            state: process.state,
+            cmd_line: CmdLineString(process.cmd_line),
+            username: UserString(crate::ui::username(process.uid)),
+        };
+        if process_display.cpu_percent > 100 {
+            process_display.cpu_percent = 0;
+        }
+
+        data.processes_times
+            .insert(process.pid, process_display.utime);
+
+        processes.push(process_display);
+    }
+    data.cpu_stat = cpu_stat;
+    processes
+}
+
+/* Might return Error if process has disappeared
+ * during the function's run */
+fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
+    /* proc file structure can be found in man 5 proc.*/
+    path.push("status");
+    let mut file: File = File::open(&path)?;
+    let mut res = String::with_capacity(2048);
+    file.read_to_string(&mut res)?;
+    let mut lines_iter = res.lines();
+    let mut ret = Process {
+        pid: 0,
+        ppid: 0,
+        vm_rss: 0,
+        uid: 0,
+        utime: 0,
+        state: State::Waiting,
+        cmd_line: String::new(),
+    };
+    let mut line;
+
+    macro_rules! err {
+        ($res:expr) => {
+            match $res {
+                Ok(v) => v,
+                Err(_) => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, ""));
+                }
+            }
+        };
+    }
+
+    macro_rules! none_err {
+        ($res:expr) => {
+            if let Some(v) = $res {
+                v
+            } else {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, ""));
+            }
+        };
+    }
+
+    let mut b = 0;
+    while b < 5 {
+        let line_opt = lines_iter.next();
+        if line_opt.is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{} returned malformed input", path.display()),
+            ));
+        }
+        line = none_err!(line_opt);
+        let mut mut_value_iter = line.split_whitespace();
+        match mut_value_iter.next() {
+            Some("VmRSS:") => {
+                ret.vm_rss = err!(usize::from_str(none_err!(mut_value_iter.next())));
+                b += 1;
+            }
+            Some("State:") => {
+                ret.state = State::from(none_err!(none_err!(mut_value_iter.next()).chars().next()));
+                b += 1;
+            }
+            Some("Pid:") => {
+                ret.pid = err!(i32::from_str(none_err!(mut_value_iter.next())));
+                b += 1;
+            }
+            Some("PPid:") => {
+                ret.ppid = err!(i32::from_str(none_err!(mut_value_iter.next())));
+                b += 1;
+            }
+            Some("Uid:") => {
+                ret.uid = err!(u32::from_str(none_err!(mut_value_iter.next())));
+                b += 1;
+            }
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "{} returned malformed input. Original error was while parsing file",
+                        path.display(),
+                    ),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    path.pop();
+    path.push("cmdline");
+    let mut file: File = File::open(&path)?;
+    res.clear();
+    file.read_to_string(&mut res)?;
+    if !res.is_empty() {
+        /* values are separated by null bytes */
+        ret.cmd_line = format!("{}", res.split('\0').collect::<Vec<&str>>().join(" "));
+    }
+    path.pop();
+    path.push("stat");
+    let mut file: File = File::open(&path)?;
+    res.clear();
+    file.read_to_string(&mut res)?;
+    /* values are separated by whitespace and are in a specific order */
+    if !res.is_empty() {
+        let mut vals = res.split_whitespace().skip(13);
+        ret.utime = err!(usize::from_str(none_err!(vals.next())));
+        ret.utime += err!(usize::from_str(none_err!(vals.next())));
+        ret.utime += err!(usize::from_str(none_err!(vals.next())));
+        ret.utime += err!(usize::from_str(none_err!(vals.next())));
+    }
+    Ok(ret)
 }

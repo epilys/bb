@@ -38,8 +38,6 @@ use std::time::Duration;
 
 mod ui;
 use ui::*;
-mod thread;
-use thread::start_thread;
 
 fn notify(signals: &[c_int]) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
     let (s, r) = bounded(100);
@@ -70,15 +68,14 @@ fn main() -> Result<(), Error> {
     let mut state = State::new();
 
     let receiver = state.receiver();
-
-    /* Start data update thread (src/thread.rs) */
-    let (s, r) = start_thread();
     let window = Box::new(Window::new(
         Box::new(ui::components::KernelMetrics::new()),
-        Box::new(ui::components::ProcessList::new(s, r)),
+        Box::new(ui::components::ProcessList::new()),
     ));
 
     state.register_component(window);
+    state.render();
+    state.redraw(true);
 
     /* Keep track of the input mode. See ui::UIMode for details */
     'main: loop {

@@ -450,9 +450,9 @@ impl Component for ProcessList {
                         .0
                         .contains(self.filter_term.as_ref().unwrap())
                 });
-                self.height = processes.len();
-                self.cursor = std::cmp::min(self.height, self.cursor);
             }
+            self.height = processes.len();
+            self.cursor = std::cmp::min(self.height, self.cursor);
 
             for p in processes.iter().skip(pages * height).take(height) {
                 let fg_color = Color::Default;

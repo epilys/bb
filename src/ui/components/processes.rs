@@ -148,6 +148,7 @@ pub struct ProcessList {
     height: usize,
     dirty: bool,
     force_redraw: bool,
+    filter_term: Option<String>,
     maxima: ColumnWidthMaxima,
     /* stop updating data */
     freeze: bool,
@@ -247,6 +248,7 @@ impl ProcessList {
             data,
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
+            filter_term: None,
             height: 0,
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
@@ -384,7 +386,6 @@ impl Component for ProcessList {
                     self.maxima.username = std::cmp::max(self.maxima.username, p.username.len());
                 }
 
-                self.height = self.processes.len();
                 self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
             }
 
@@ -401,6 +402,10 @@ impl Component for ProcessList {
 
                 upper_left = pos_inc(upper_left, (0, 2));
             }
+            let cmd_header = self
+                .filter_term
+                .as_ref()
+                .map(|filter_term| format!("CMD_LINE (filter: {})", filter_term));
 
             /* Write column headers */
             let (x, y) = write_string_to_grid(
@@ -412,7 +417,7 @@ impl Component for ProcessList {
                     vm_rss = "VM_RSS",
                     cpu_percent = "  CPU%",
                     state = " ",
-                    cmd_line = "CMD_LINE",
+                    cmd_line = if let Some(ref cmd_header) = cmd_header { cmd_header } else { "CMD_LINE"} ,
                     max_pid = self.maxima.pid,
                     max_ppid = self.maxima.ppid,
                     max_username = self.maxima.username,
@@ -438,6 +443,16 @@ impl Component for ProcessList {
 
             let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
             processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
+            if self.filter_term.is_some() {
+                processes.retain(|process| {
+                    process
+                        .cmd_line
+                        .0
+                        .contains(self.filter_term.as_ref().unwrap())
+                });
+                self.height = processes.len();
+                self.cursor = std::cmp::min(self.height, self.cursor);
+            }
 
             for p in processes.iter().skip(pages * height).take(height) {
                 let fg_color = Color::Default;
@@ -809,6 +824,20 @@ impl Component for ProcessList {
                 self.page_movement = Some(PageMovement::End);
                 self.dirty = true;
             }
+            UIEvent::Input(Key::Char(c)) if self.filter_term.is_some() && self.mode == Normal => {
+                if let Some(ref mut filter_term) = self.filter_term {
+                    if !c.is_ascii_control() {
+                        filter_term.push(*c);
+                        self.force_redraw = true;
+                        self.dirty = true;
+                    }
+                }
+            }
+            UIEvent::Input(k) if *k == map["filter"] => {
+                self.filter_term = Some(String::new());
+                self.force_redraw = true;
+                self.dirty = true;
+            }
             UIEvent::Input(k) if *k == map["follow process group"] => {
                 self.mode = Follow(0);
                 self.force_redraw = true;
@@ -827,6 +856,7 @@ impl Component for ProcessList {
                 self.mode = Normal;
                 self.freeze = false;
                 self.force_redraw = true;
+                self.filter_term = None;
                 self.dirty = true;
             }
             UIEvent::Input(Key::Char(f)) if self.mode != Normal && f.is_numeric() => {
@@ -853,6 +883,16 @@ impl Component for ProcessList {
                     self.dirty = true;
                     self.force_redraw = true;
                 }
+            UIEvent::Input(Key::Backspace) if self.filter_term.is_some() => {
+                let filter_term = self.filter_term.as_mut();
+                if filter_term.as_ref().unwrap().is_empty() {
+                    self.filter_term = None;
+                } else {
+                    // TODO pop grapheme
+                    filter_term.unwrap().pop();
+                }
+                self.dirty = true;
+                self.force_redraw = true;
             }
             UIEvent::Input(Key::Char('\n')) if self.mode != Normal => {
                 if let Kill(ref mut n) = self.mode {
@@ -884,6 +924,7 @@ impl Component for ProcessList {
         map.insert("follow process group", Key::Char('F'));
         map.insert("freeze updates", Key::Char('f'));
         map.insert("kill process", Key::Char('k'));
+        map.insert("filter", Key::Char('/'));
         map.insert("cancel", Key::Esc);
         let mut ret: ShortcutMaps = Default::default();
         ret.insert("".to_string(), map);

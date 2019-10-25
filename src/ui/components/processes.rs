@@ -147,6 +147,7 @@ pub struct ProcessList {
     cursor: usize,
     height: usize,
     dirty: bool,
+    force_redraw: bool,
     maxima: ColumnWidthMaxima,
     /* stop updating data */
     freeze: bool,
@@ -158,6 +159,7 @@ pub struct ProcessList {
 #[derive(Debug, PartialEq)]
 enum ProcessListMode {
     Normal,
+    Follow(Pid),
     Kill(u16),
 }
 
@@ -250,6 +252,14 @@ impl ProcessList {
             freeze: false,
             mode: Normal,
             dirty: true,
+            force_redraw: false,
+        }
+    }
+
+    fn follow(&self) -> Option<Pid> {
+        match self.mode {
+            ProcessListMode::Follow(pid) => Some(pid),
+            _ => None,
         }
     }
 }
@@ -267,11 +277,32 @@ impl Component for ProcessList {
             return;
         }
 
+        if self.force_redraw {
+            self.force_redraw = false;
+            tick = true;
+        }
+
         if !self.dirty && !tick {
+            if let Follow(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
+                    false,
+                );
+                dirty_areas.push_back((
+                    pos_inc(upper_left!(area), (0, 1)),
+                    set_y(bottom_right!(area), y),
+                ));
+            }
+
             return;
         }
 
-        let upper_left = pos_inc(upper_left!(area), (1, 0));
+        let mut upper_left = pos_inc(upper_left!(area), (1, 0));
         let bottom_right = pos_dec(bottom_right!(area), (1, 1));
 
         /* Reserve first row for column headers */
@@ -304,6 +335,21 @@ impl Component for ProcessList {
         }
 
         if !self.dirty && (!tick/* implies freeze */) && old_cursor != self.cursor {
+            if let Follow(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
+                    false,
+                );
+                dirty_areas.push_back((
+                    pos_inc(upper_left!(area), (0, 1)),
+                    set_y(bottom_right!(area), y),
+                ));
+            }
             /* Nothing to update */
             return;
         }
@@ -316,7 +362,8 @@ impl Component for ProcessList {
         let update_maxima = tick && !self.freeze;
 
         if update_maxima {
-            self.processes = get(&mut self.data);
+            let follow = self.follow();
+            self.processes = get(&mut self.data, follow);
         };
 
         if tick || self.freeze {
@@ -339,6 +386,20 @@ impl Component for ProcessList {
 
                 self.height = self.processes.len();
                 self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
+            }
+
+            if let Follow(ref pid) = self.mode {
+                write_string_to_grid(
+                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    false,
+                );
+
+                upper_left = pos_inc(upper_left, (0, 2));
             }
 
             /* Write column headers */
@@ -544,6 +605,21 @@ impl Component for ProcessList {
                 y_offset += 1;
             }
         } else if old_cursor != self.cursor {
+            if let Follow(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    false,
+                );
+                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right!(area), y)));
+
+                upper_left = pos_inc(upper_left, (0, 2));
+            }
+
             let new_area = (
                 pos_inc(upper_left, (0, self.cursor + 2 - pages * height)),
                 set_y(
@@ -562,6 +638,17 @@ impl Component for ProcessList {
             change_colors(grid, old_area, None, Some(Color::Default));
             dirty_areas.push_back(old_area);
             dirty_areas.push_back(new_area);
+        } else if let Follow(ref pid) = self.mode {
+            let (_, y) = write_string_to_grid(
+                &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Bold,
+                (pos_inc(upper_left, (0, 1)), bottom_right),
+                false,
+            );
+            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
         }
 
         if let Kill(ref n) = self.mode {
@@ -722,6 +809,11 @@ impl Component for ProcessList {
                 self.page_movement = Some(PageMovement::End);
                 self.dirty = true;
             }
+            UIEvent::Input(k) if *k == map["follow process group"] => {
+                self.mode = Follow(0);
+                self.force_redraw = true;
+                self.dirty = true;
+            }
             UIEvent::Input(k) if *k == map["freeze updates"] && self.mode == Normal => {
                 self.freeze = !self.freeze;
                 self.dirty = true;
@@ -732,36 +824,51 @@ impl Component for ProcessList {
                 self.dirty = true;
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
-                if let Kill(_) = self.mode {
-                    self.mode = Normal;
-                    self.freeze = false;
-                    self.dirty = true;
-                }
+                self.mode = Normal;
+                self.freeze = false;
+                self.force_redraw = true;
+                self.dirty = true;
             }
             UIEvent::Input(Key::Char(f)) if self.mode != Normal && f.is_numeric() => {
                 if let Kill(ref mut n) = self.mode {
-                    *n = *n * 10 + (f.to_digit(10).unwrap() as u16);
+                    if let Some(add) = (*n).checked_mul(10) {
+                        *n = add
+                            .checked_add(f.to_digit(10).unwrap() as u16)
+                            .unwrap_or(*n);
+                    }
+                } else if let Follow(ref mut p) = self.mode {
+                    if let Some(add) = (*p).checked_mul(10) {
+                        *p = add
+                            .checked_add(f.to_digit(10).unwrap() as i32)
+                            .unwrap_or(*p);
+                    }
+                    self.dirty = true;
                 }
             }
             UIEvent::Input(Key::Backspace) if self.mode != Normal => {
                 if let Kill(ref mut n) = self.mode {
                     *n = *n / 10;
+                } else if let Follow(ref mut p) = self.mode {
+                    *p = *p / 10;
+                    self.dirty = true;
+                    self.force_redraw = true;
                 }
             }
             UIEvent::Input(Key::Char('\n')) if self.mode != Normal => {
-                let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-                processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
                 if let Kill(ref mut n) = self.mode {
                     use nix::sys::signal::kill;
+
+                    let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
+                    processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
                     kill(
                         nix::unistd::Pid::from_raw(processes[self.cursor].i),
                         nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
                     )
                     .ok()
                     .take();
+                    self.mode = Normal;
+                    self.dirty = true;
                 }
-                self.mode = Normal;
-                self.dirty = true;
             }
             _ => {}
         }
@@ -774,6 +881,7 @@ impl Component for ProcessList {
     fn set_dirty(&mut self) {}
     fn get_shortcuts(&self) -> ShortcutMaps {
         let mut map: ShortcutMap = Default::default();
+        map.insert("follow process group", Key::Char('F'));
         map.insert("freeze updates", Key::Char('f'));
         map.insert("kill process", Key::Char('k'));
         map.insert("cancel", Key::Esc);
@@ -819,7 +927,7 @@ fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str,
     }
 }
 
-fn get(data: &mut ProcessData) -> Vec<ProcessDisplay> {
+fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
     let mut processes = Vec::with_capacity(2048);
     let cpu_stat = get_stat(&mut 0).remove(0);
     for entry in std::fs::read_dir("/proc/").unwrap() {
@@ -840,6 +948,13 @@ fn get(data: &mut ProcessData) -> Vec<ProcessDisplay> {
 
         if process.cmd_line.is_empty() {
             /* This is a kernel thread, skip for now */
+            continue;
+        }
+
+        if follow_pid.is_some()
+            && process.ppid != follow_pid.unwrap()
+            && process.pid != follow_pid.unwrap()
+        {
             continue;
         }
 

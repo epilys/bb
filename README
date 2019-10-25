@@ -15,9 +15,11 @@ BUILD
      ./target/release/bb
 
 SHORTCUTS
-          'k' kill process under cursor
-              press enter to confirm kill, or esc to cancel
-          'f' (un)freeze process list updates
+			'F' Follow process and its children. Type the pid you want to follow
+			'k' kill process under cursor
+					press enter to confirm kill, or esc to cancel
+			'f' (un)freeze process list updates
+			Esc cancel action
 AUTHORS
      Copyright 2019 Manos Pitsidianakis <epilys@nessuent.xyz> Released
      under the GPL, version 3 or greater. This software carries no warranty of

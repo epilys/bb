@@ -1,8 +1,9 @@
 [package]
 name = "bb"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Manos Pitsidianakis <el13635@mail.ntua.gr>"]
-license-file = "COPYING"
+license = "GPL-3.0-or-later"
+readme = "README.md"
 description = "clean simple fast process viewer"
 repository = "https://github.com/epilys/bb.git"
 categories = ["command-line-utilities", ]

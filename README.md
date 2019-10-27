@@ -34,6 +34,11 @@ cargo install bb
             Press Enter to confirm kill, or Esc to cancel
       'f'   (un)freeze process list updates
       '/'   Filter process list
+      't'   toggle tree view
+      F1    toggles/activates username sorting
+      F2    toggles/activates vm_rss sorting
+      F3    toggles/activates cpu% sorting
+      F4    toggles/activates cmd_line sorting
       Esc   Cancel action
 ```
 

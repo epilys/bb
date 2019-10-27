@@ -128,6 +128,18 @@ define_column_string!(
 
 pub type Pid = i32;
 
+#[derive(Debug, Copy, Clone)]
+enum Sort {
+    UserAsc,
+    UserDesc,
+    VmRssAsc,
+    VmRssDesc,
+    CpuAsc,
+    CpuDesc,
+    CmdLineAsc,
+    CmdLineDesc,
+}
+
 /* Wrapper type for display strings */
 #[derive(Debug)]
 pub struct ProcessDisplay {
@@ -136,6 +148,7 @@ pub struct ProcessDisplay {
     pub pid: PidString,
     pub ppid: PpidString,
     pub vm_rss: VmRssString,
+    vm_rss_value: usize,
     pub cpu_percent: usize,
     pub state: State,
     pub cmd_line: CmdLineString,
@@ -160,6 +173,7 @@ pub struct ProcessList {
     draw_tree: bool,
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
+    sort: Sort,
     mode: ProcessListMode,
 }
 
@@ -265,6 +279,7 @@ impl ProcessList {
             draw_tree: false,
             mode: Normal,
             dirty: true,
+            sort: Sort::CpuDesc,
             force_redraw: false,
         }
     }
@@ -627,7 +642,7 @@ impl Component for ProcessList {
 
         if update_maxima {
             let follow = self.follow();
-            self.processes = get(&mut self.data, follow);
+            self.processes = get(&mut self.data, follow, self.sort);
         };
 
         if tick || self.freeze {
@@ -672,7 +687,7 @@ impl Component for ProcessList {
             /* Write column headers */
             let (x, y) = write_string_to_grid(
                 &format!(
-                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}  {state:>max_state$}  {cmd_line}",
+                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}{usernamesort} {vm_rss:>max_vm_rss$}{vmrsssort} {cpu_percent:>max_cpu_percent$}{cpusort} {state:>max_state$}  {cmd_line}{cmd_linesort}",
                     pid = "PID",
                     ppid ="PPID",
                     username = "USER",
@@ -686,6 +701,10 @@ impl Component for ProcessList {
                     max_vm_rss = self.maxima.vm_rss,
                     max_cpu_percent = self.maxima.cpu_percent,
                     max_state = self.maxima.state,
+                    usernamesort = if let Sort::UserAsc = self.sort { "↑" } else if let Sort::UserDesc = self.sort { "↓" } else { " " },
+                    vmrsssort = if let Sort::VmRssAsc = self.sort { "↑" } else if let Sort::VmRssDesc = self.sort { "↓" } else { " " },
+                    cpusort = if let Sort::CpuAsc = self.sort { "↑" } else if let Sort::CpuDesc = self.sort { "↓" } else { " " },
+                    cmd_linesort = if let Sort::CmdLineAsc = self.sort { "↑" } else if let Sort::CmdLineDesc = self.sort { "↓" } else { "" },
                 ),
                 grid,
                 Color::Black,
@@ -707,7 +726,16 @@ impl Component for ProcessList {
                 self.draw_tree_list(grid, (upper_left, bottom_right), pages, height);
             } else {
                 let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-                processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
+                processes.sort_unstable_by(|a, b| match self.sort {
+                    Sort::CpuAsc => a.cpu_percent.cmp(&b.cpu_percent),
+                    Sort::CpuDesc => b.cpu_percent.cmp(&a.cpu_percent),
+                    Sort::VmRssAsc => a.vm_rss_value.cmp(&b.vm_rss_value),
+                    Sort::VmRssDesc => b.vm_rss_value.cmp(&a.vm_rss_value),
+                    Sort::UserAsc => a.username.0.cmp(&b.username.0),
+                    Sort::UserDesc => b.username.0.cmp(&a.username.0),
+                    Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
+                    Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
+                });
                 if self.filter_term.is_some() {
                     processes.retain(|process| {
                         process
@@ -1090,6 +1118,23 @@ impl Component for ProcessList {
                 self.page_movement = Some(PageMovement::End);
                 self.dirty = true;
             }
+            UIEvent::Input(Key::F(f)) => {
+                use Sort::*;
+                self.sort = match (self.sort, f) {
+                    (Sort::UserAsc, 1) => UserDesc,
+                    (Sort::UserDesc, 1) | (_, 1) => UserAsc,
+                    (Sort::VmRssDesc, 2) => VmRssAsc,
+                    (Sort::VmRssAsc, 2) | (_, 2) => VmRssDesc,
+                    (Sort::CpuDesc, 3) => CpuAsc,
+                    (Sort::CpuAsc, 3) | (_, 3) => CpuDesc,
+                    (Sort::CmdLineDesc, 4) => CmdLineAsc,
+                    (Sort::CmdLineAsc, 4) | (_, 4) => CmdLineDesc,
+                    _ => return,
+                };
+
+                self.force_redraw = true;
+                self.dirty = true;
+            }
             UIEvent::Input(Key::Char(c)) if self.filter_term.is_some() && self.mode == Normal => {
                 if let Some(ref mut filter_term) = self.filter_term {
                     if !c.is_ascii_control() {
@@ -1173,11 +1218,20 @@ impl Component for ProcessList {
                 self.force_redraw = true;
             }
             UIEvent::Input(Key::Char('\n')) if self.mode != Normal => {
-                if let Kill(ref mut n) = self.mode {
+                if let Kill(ref n) = self.mode {
                     use nix::sys::signal::kill;
 
                     let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-                    processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
+                    processes.sort_unstable_by(|a, b| match self.sort {
+                        Sort::CpuAsc => a.cpu_percent.cmp(&b.cpu_percent),
+                        Sort::CpuDesc => b.cpu_percent.cmp(&a.cpu_percent),
+                        Sort::VmRssAsc => a.vm_rss_value.cmp(&b.vm_rss_value),
+                        Sort::VmRssDesc => b.vm_rss_value.cmp(&a.vm_rss_value),
+                        Sort::UserAsc => a.username.0.cmp(&b.username.0),
+                        Sort::UserDesc => b.username.0.cmp(&a.username.0),
+                        Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
+                        Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
+                    });
                     kill(
                         nix::unistd::Pid::from_raw(processes[self.cursor].i),
                         nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
@@ -1248,7 +1302,7 @@ fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str,
     }
 }
 
-fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
+fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<ProcessDisplay> {
     data.tree.clear();
     data.parents.clear();
     data.processes_index.clear();
@@ -1299,6 +1353,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
             pid: PidString(process.pid.to_string()),
             ppid: PpidString(process.ppid.to_string()),
             vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
+            vm_rss_value: process.vm_rss * 1024,
             cpu_percent: (100.0
                 * ((process.utime
                     - processes_times
@@ -1330,9 +1385,18 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
         tree.push((ind, pid));
         if let Some(children) = parents.get_mut(&pid) {
             children.sort_unstable_by(|a, b| {
-                processes[processes_index[b]]
-                    .cpu_percent
-                    .cmp(&processes[processes_index[a]].cpu_percent)
+                let a = &processes[processes_index[a]];
+                let b = &processes[processes_index[b]];
+                match sort {
+                    Sort::CpuAsc => a.cpu_percent.cmp(&b.cpu_percent),
+                    Sort::CpuDesc => b.cpu_percent.cmp(&a.cpu_percent),
+                    Sort::VmRssAsc => a.vm_rss_value.cmp(&b.vm_rss_value),
+                    Sort::VmRssDesc => b.vm_rss_value.cmp(&a.vm_rss_value),
+                    Sort::UserAsc => a.username.0.cmp(&b.username.0),
+                    Sort::UserDesc => b.username.0.cmp(&a.username.0),
+                    Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
+                    Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
+                }
             });
             stack.extend(children.iter().map(|p| (ind + 1, *p)).rev());
         }

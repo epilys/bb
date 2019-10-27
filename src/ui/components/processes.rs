@@ -29,6 +29,10 @@ use std::str::FromStr;
 pub struct ProcessData {
     cpu_stat: Stat,
     processes_times: HashMap<Pid, usize>,
+    parents: HashMap<Pid, Vec<Pid>>,
+    processes_index: HashMap<Pid, usize>,
+    tree_index: HashMap<Pid, usize>,
+    tree: Vec<(usize, Pid)>,
 }
 
 const SIGNAL_LIST: &[(i32, &'static str)] = &[
@@ -128,6 +132,7 @@ pub type Pid = i32;
 #[derive(Debug)]
 pub struct ProcessDisplay {
     pub i: Pid,
+    pub p: Pid,
     pub pid: PidString,
     pub ppid: PpidString,
     pub vm_rss: VmRssString,
@@ -152,6 +157,7 @@ pub struct ProcessList {
     maxima: ColumnWidthMaxima,
     /* stop updating data */
     freeze: bool,
+    draw_tree: bool,
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
     mode: ProcessListMode,
@@ -240,6 +246,10 @@ impl ProcessList {
         let data = ProcessData {
             cpu_stat: get_stat(&mut 0).remove(0),
             processes_times: Default::default(),
+            processes_index: Default::default(),
+            tree_index: Default::default(),
+            parents: Default::default(),
+            tree: Default::default(),
         };
         ProcessList {
             cursor: 0,
@@ -252,6 +262,7 @@ impl ProcessList {
             height: 0,
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
+            draw_tree: false,
             mode: Normal,
             dirty: true,
             force_redraw: false,
@@ -262,6 +273,257 @@ impl ProcessList {
         match self.mode {
             ProcessListMode::Follow(pid) => Some(pid),
             _ => None,
+        }
+    }
+
+    fn draw_tree_list(&self, grid: &mut CellBuffer, area: Area, pages: usize, height: usize) {
+        let (upper_left, bottom_right) = area;
+
+        let mut y_offset = 0;
+
+        let mut branches = vec![];
+        let mut child_counters = vec![0];
+
+        let mut lines = Vec::with_capacity(2048);
+        let mut iter = self.data.tree.iter().peekable();
+        while let Some((ind, pid)) = iter.next() {
+            let p = &self.processes[self.data.processes_index[pid]];
+            let has_sibling: bool = child_counters
+                .get(*ind)
+                .map(|n| {
+                    *n != self
+                        .data
+                        .parents
+                        .get(&p.p)
+                        .and_then(|v| Some(v.len() - 1))
+                        .unwrap_or(0)
+                })
+                .unwrap_or(false);
+
+            let is_first: bool = child_counters.last().map(|n| *n == 0).unwrap_or(false);
+
+            if let Some(counter) = child_counters.get_mut(*ind) {
+                *counter += 1;
+            }
+
+            let mut s = String::with_capacity(16);
+
+            for i in 0..*ind {
+                if branches.len() > i && branches[i] {
+                    s.push('│');
+                } else {
+                    s.push(' ');
+                }
+                if i > 0 {}
+                s.push(' ');
+            }
+
+            if *ind > 0 || (has_sibling || is_first) {
+                if has_sibling && is_first {
+                    s.push('├');
+                } else if has_sibling {
+                    s.push('├');
+                } else {
+                    s.push('└');
+                }
+                s.push('─');
+                s.push('>');
+            }
+
+            lines.push(s);
+            match iter.peek() {
+                Some((n, _)) if *n > *ind => {
+                    child_counters.push(0);
+                    if has_sibling {
+                        branches.push(true);
+                    } else {
+                        branches.push(false);
+                    }
+                }
+                Some((n, _)) if *n < *ind => {
+                    for _ in 0..(ind - *n) {
+                        branches.pop();
+                        child_counters.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for ((_, pid), s) in self
+            .data
+            .tree
+            .iter()
+            .zip(lines.iter())
+            .skip(pages * height)
+            .take(height)
+        {
+            let fg_color = Color::Default;
+            let bg_color = if pages * height + y_offset == self.cursor {
+                Color::Byte(235)
+            } else {
+                Color::Default
+            };
+            let p = &self.processes[self.data.processes_index[pid]];
+            match executable_path_color(&p.cmd_line) {
+                Ok((path, bin, rest)) => {
+                    let (x, y) = write_string_to_grid(
+                            &format!(
+                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  {branches}",
+                            pid = p.pid,
+                            ppid = p.ppid,
+                            username = p.username,
+                            vm_rss = p.vm_rss,
+                            cpu_percent = p.cpu_percent,
+                            state = p.state,
+                            max_pid = self.maxima.pid,
+                            max_ppid = self.maxima.ppid,
+                            max_username = self.maxima.username,
+                            max_vm_rss = self.maxima.vm_rss,
+                            max_cpu_percent = self.maxima.cpu_percent,
+                            max_state = self.maxima.state,
+                            branches = s,
+                                ),
+                            grid,
+                            fg_color,
+                            bg_color,
+                            Attr::Default,
+                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                            false,
+                        );
+                    if p.state == State::Running {
+                        grid[pos_inc(
+                            upper_left,
+                            (
+                                2 * 5
+                                    + self.maxima.pid
+                                    + self.maxima.ppid
+                                    + self.maxima.username
+                                    + self.maxima.vm_rss
+                                    + self.maxima.cpu_percent,
+                                y_offset + 2,
+                            ),
+                        )]
+                        .set_fg(if self.freeze {
+                            Color::Byte(12)
+                        } else {
+                            Color::Byte(10)
+                        });
+                    }
+                    let (x, _) = write_string_to_grid(
+                        path,
+                        grid,
+                        Color::Byte(243),
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                        false,
+                    );
+                    let (x, _) = write_string_to_grid(
+                        bin,
+                        grid,
+                        if self.freeze {
+                            Color::Byte(32)
+                        } else {
+                            Color::Byte(34)
+                        },
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                        false,
+                    );
+                    let (x, _) = write_string_to_grid(
+                        rest,
+                        grid,
+                        fg_color,
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                        false,
+                    );
+                    change_colors(
+                        grid,
+                        ((x, y), set_y(bottom_right, y)),
+                        Some(fg_color),
+                        Some(bg_color),
+                    );
+                }
+                Err((bin, rest)) => {
+                    let (x, _) = write_string_to_grid(
+                            &format!(
+                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  {branches}",
+                            pid = p.pid,
+                            ppid = p.ppid,
+                            username = p.username,
+                            vm_rss = p.vm_rss,
+                            cpu_percent = p.cpu_percent,
+                            state = p.state,
+                            max_pid = self.maxima.pid,
+                            max_ppid = self.maxima.ppid,
+                            max_username = self.maxima.username,
+                            max_vm_rss = self.maxima.vm_rss,
+                            max_cpu_percent = self.maxima.cpu_percent,
+                            max_state = self.maxima.state,
+                            branches = s,
+                            ),
+                            grid,
+                            fg_color,
+                            bg_color,
+                            Attr::Default,
+                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                            false,
+                        );
+                    if p.state == State::Running {
+                        grid[pos_inc(
+                            upper_left,
+                            (
+                                2 * 5
+                                    + 1
+                                    + self.maxima.pid
+                                    + self.maxima.ppid
+                                    + self.maxima.username
+                                    + self.maxima.vm_rss
+                                    + self.maxima.cpu_percent,
+                                y_offset + 2,
+                            ),
+                        )]
+                        .set_fg(if self.freeze {
+                            Color::Byte(12)
+                        } else {
+                            Color::Byte(10)
+                        });
+                    }
+                    let (x, _) = write_string_to_grid(
+                        bin,
+                        grid,
+                        if self.freeze {
+                            Color::Byte(32)
+                        } else {
+                            Color::Byte(34)
+                        },
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                        false,
+                    );
+                    let (x, y) = write_string_to_grid(
+                        rest,
+                        grid,
+                        fg_color,
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                        false,
+                    );
+                    change_colors(
+                        grid,
+                        ((x, y), set_y(bottom_right, y)),
+                        Some(fg_color),
+                        Some(bg_color),
+                    );
+                }
+            }
+            y_offset += 1;
         }
     }
 }
@@ -441,29 +703,32 @@ impl Component for ProcessList {
 
             let mut y_offset = 0;
 
-            let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-            processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
-            if self.filter_term.is_some() {
-                processes.retain(|process| {
-                    process
-                        .cmd_line
-                        .0
-                        .contains(self.filter_term.as_ref().unwrap())
-                });
-            }
-            self.height = processes.len();
-            self.cursor = std::cmp::min(self.height, self.cursor);
+            if self.draw_tree {
+                self.draw_tree_list(grid, (upper_left, bottom_right), pages, height);
+            } else {
+                let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
+                processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
+                if self.filter_term.is_some() {
+                    processes.retain(|process| {
+                        process
+                            .cmd_line
+                            .0
+                            .contains(self.filter_term.as_ref().unwrap())
+                    });
+                }
+                self.height = processes.len();
+                self.cursor = std::cmp::min(self.height, self.cursor);
 
-            for p in processes.iter().skip(pages * height).take(height) {
-                let fg_color = Color::Default;
-                let bg_color = if pages * height + y_offset == self.cursor {
-                    Color::Byte(235)
-                } else {
-                    Color::Default
-                };
-                match executable_path_color(&p.cmd_line) {
-                    Ok((path, bin, rest)) => {
-                        let (x, y) = write_string_to_grid(
+                for p in processes.iter().skip(pages * height).take(height) {
+                    let fg_color = Color::Default;
+                    let bg_color = if pages * height + y_offset == self.cursor {
+                        Color::Byte(235)
+                    } else {
+                        Color::Default
+                    };
+                    match executable_path_color(&p.cmd_line) {
+                        Ok((path, bin, rest)) => {
+                            let (x, y) = write_string_to_grid(
                             &format!(
                     "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
                             pid = p.pid,
@@ -486,65 +751,65 @@ impl Component for ProcessList {
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
                             false,
                         );
-                        if p.state == State::Running {
-                            grid[pos_inc(
-                                upper_left,
-                                (
-                                    2 * 5
-                                        + self.maxima.pid
-                                        + self.maxima.ppid
-                                        + self.maxima.username
-                                        + self.maxima.vm_rss
-                                        + self.maxima.cpu_percent,
-                                    y_offset + 2,
-                                ),
-                            )]
-                            .set_fg(if self.freeze {
-                                Color::Byte(12)
-                            } else {
-                                Color::Byte(10)
-                            });
+                            if p.state == State::Running {
+                                grid[pos_inc(
+                                    upper_left,
+                                    (
+                                        2 * 5
+                                            + self.maxima.pid
+                                            + self.maxima.ppid
+                                            + self.maxima.username
+                                            + self.maxima.vm_rss
+                                            + self.maxima.cpu_percent,
+                                        y_offset + 2,
+                                    ),
+                                )]
+                                .set_fg(if self.freeze {
+                                    Color::Byte(12)
+                                } else {
+                                    Color::Byte(10)
+                                });
+                            }
+                            let (x, _) = write_string_to_grid(
+                                path,
+                                grid,
+                                Color::Byte(243),
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                                false,
+                            );
+                            let (x, _) = write_string_to_grid(
+                                bin,
+                                grid,
+                                if self.freeze {
+                                    Color::Byte(32)
+                                } else {
+                                    Color::Byte(34)
+                                },
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                                false,
+                            );
+                            let (x, _) = write_string_to_grid(
+                                rest,
+                                grid,
+                                fg_color,
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                                false,
+                            );
+                            change_colors(
+                                grid,
+                                ((x, y), set_y(bottom_right, y)),
+                                Some(fg_color),
+                                Some(bg_color),
+                            );
                         }
-                        let (x, _) = write_string_to_grid(
-                            path,
-                            grid,
-                            Color::Byte(243),
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                            false,
-                        );
-                        let (x, _) = write_string_to_grid(
-                            bin,
-                            grid,
-                            if self.freeze {
-                                Color::Byte(32)
-                            } else {
-                                Color::Byte(34)
-                            },
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                            false,
-                        );
-                        let (x, _) = write_string_to_grid(
-                            rest,
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                            false,
-                        );
-                        change_colors(
-                            grid,
-                            ((x, y), set_y(bottom_right, y)),
-                            Some(fg_color),
-                            Some(bg_color),
-                        );
-                    }
-                    Err((bin, rest)) => {
-                        let (x, _) = write_string_to_grid(
+                        Err((bin, rest)) => {
+                            let (x, _) = write_string_to_grid(
                             &format!(
                             "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
                             pid = p.pid,
@@ -567,57 +832,58 @@ impl Component for ProcessList {
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
                             false,
                         );
-                        if p.state == State::Running {
-                            grid[pos_inc(
-                                upper_left,
-                                (
-                                    2 * 5
-                                        + 1
-                                        + self.maxima.pid
-                                        + self.maxima.ppid
-                                        + self.maxima.username
-                                        + self.maxima.vm_rss
-                                        + self.maxima.cpu_percent,
-                                    y_offset + 2,
-                                ),
-                            )]
-                            .set_fg(if self.freeze {
-                                Color::Byte(12)
-                            } else {
-                                Color::Byte(10)
-                            });
+                            if p.state == State::Running {
+                                grid[pos_inc(
+                                    upper_left,
+                                    (
+                                        2 * 5
+                                            + 1
+                                            + self.maxima.pid
+                                            + self.maxima.ppid
+                                            + self.maxima.username
+                                            + self.maxima.vm_rss
+                                            + self.maxima.cpu_percent,
+                                        y_offset + 2,
+                                    ),
+                                )]
+                                .set_fg(if self.freeze {
+                                    Color::Byte(12)
+                                } else {
+                                    Color::Byte(10)
+                                });
+                            }
+                            let (x, _) = write_string_to_grid(
+                                bin,
+                                grid,
+                                if self.freeze {
+                                    Color::Byte(32)
+                                } else {
+                                    Color::Byte(34)
+                                },
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                                false,
+                            );
+                            let (x, y) = write_string_to_grid(
+                                rest,
+                                grid,
+                                fg_color,
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
+                                false,
+                            );
+                            change_colors(
+                                grid,
+                                ((x, y), set_y(bottom_right, y)),
+                                Some(fg_color),
+                                Some(bg_color),
+                            );
                         }
-                        let (x, _) = write_string_to_grid(
-                            bin,
-                            grid,
-                            if self.freeze {
-                                Color::Byte(32)
-                            } else {
-                                Color::Byte(34)
-                            },
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                            false,
-                        );
-                        let (x, y) = write_string_to_grid(
-                            rest,
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                            false,
-                        );
-                        change_colors(
-                            grid,
-                            ((x, y), set_y(bottom_right, y)),
-                            Some(fg_color),
-                            Some(bg_color),
-                        );
                     }
+                    y_offset += 1;
                 }
-                y_offset += 1;
             }
         } else if old_cursor != self.cursor {
             if let Follow(ref pid) = self.mode {
@@ -835,6 +1101,7 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k) if *k == map["filter"] => {
                 self.filter_term = Some(String::new());
+                self.draw_tree = false;
                 self.force_redraw = true;
                 self.dirty = true;
             }
@@ -859,6 +1126,14 @@ impl Component for ProcessList {
                 self.freeze = false;
                 self.force_redraw = true;
                 self.filter_term = None;
+                self.dirty = true;
+            }
+            UIEvent::Input(k)
+                if *k == map["toggle tree view"]
+                    && !(self.draw_tree && self.filter_term.is_some()) =>
+            {
+                self.draw_tree = !self.draw_tree;
+                self.force_redraw = true;
                 self.dirty = true;
             }
             UIEvent::Input(Key::Char(f)) if self.mode != Normal && f.is_numeric() => {
@@ -927,6 +1202,7 @@ impl Component for ProcessList {
         let mut map: ShortcutMap = Default::default();
         map.insert("follow process group", Key::Char('F'));
         map.insert("freeze updates", Key::Char('f'));
+        map.insert("toggle tree view", Key::Char('t'));
         map.insert("kill process", Key::Char('k'));
         map.insert("filter", Key::Char('/'));
         map.insert("cancel", Key::Esc);
@@ -973,6 +1249,20 @@ fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str,
 }
 
 fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
+    data.tree.clear();
+    data.parents.clear();
+    data.processes_index.clear();
+    data.tree_index.clear();
+
+    let ProcessData {
+        ref mut parents,
+        ref mut processes_index,
+        ref mut tree_index,
+        ref mut tree,
+        ref mut processes_times,
+        cpu_stat: ref mut data_cpu_stat,
+    } = data;
+
     let mut processes = Vec::with_capacity(2048);
     let cpu_stat = get_stat(&mut 0).remove(0);
     for entry in std::fs::read_dir("/proc/").unwrap() {
@@ -1005,17 +1295,17 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
 
         let mut process_display = ProcessDisplay {
             i: process.pid,
+            p: process.ppid,
             pid: PidString(process.pid.to_string()),
             ppid: PpidString(process.ppid.to_string()),
             vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
             cpu_percent: (100.0
                 * ((process.utime
-                    - data
-                        .processes_times
+                    - processes_times
                         .get(&process.pid)
                         .map(|v| *v)
                         .unwrap_or(process.utime)) as f64
-                    / ((cpu_stat.total_time() - data.cpu_stat.total_time()) as f64)))
+                    / ((cpu_stat.total_time() - data_cpu_stat.total_time()) as f64)))
                 as usize,
             utime: process.utime,
             state: process.state,
@@ -1026,12 +1316,27 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>) -> Vec<ProcessDisplay> {
             process_display.cpu_percent = 0;
         }
 
-        data.processes_times
-            .insert(process.pid, process_display.utime);
+        processes_times.insert(process.pid, process_display.utime);
+        parents.entry(process.ppid).or_default().push(process.pid);
 
+        processes_index.insert(process.pid, processes.len());
         processes.push(process_display);
     }
-    data.cpu_stat = cpu_stat;
+    *data_cpu_stat = cpu_stat;
+    let mut stack = Vec::with_capacity(processes.len());
+    stack.push((0, 1));
+    while let Some((ind, pid)) = stack.pop() {
+        tree_index.insert(pid, tree.len());
+        tree.push((ind, pid));
+        if let Some(children) = parents.get_mut(&pid) {
+            children.sort_unstable_by(|a, b| {
+                processes[processes_index[b]]
+                    .cpu_percent
+                    .cmp(&processes[processes_index[a]].cpu_percent)
+            });
+            stack.extend(children.iter().map(|p| (ind + 1, *p)).rev());
+        }
+    }
     processes
 }
 

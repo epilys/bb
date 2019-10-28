@@ -1628,7 +1628,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
         tree_index.insert(pid, tree.len());
         tree.push((ind, pid));
         if let Some(children) = parents.get_mut(&pid) {
-            if !keep_list.is_empty() {
+            if follow_pid.is_some() {
                 children.retain(|c| keep_list.contains(c));
             }
             children.sort_unstable_by(|a, b| {

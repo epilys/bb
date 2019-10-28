@@ -20,7 +20,7 @@
  */
 
 use super::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
@@ -184,6 +184,19 @@ enum ProcessListMode {
     Kill(u16),
 }
 
+impl ProcessListMode {
+    fn is_normal(&self) -> bool {
+        *self == Normal
+    }
+
+    fn is_follow(&self) -> bool {
+        match self {
+            Follow(_) => true,
+            _ => false,
+        }
+    }
+}
+
 use ProcessListMode::*;
 
 #[derive(Debug, PartialEq)]
@@ -291,6 +304,33 @@ impl ProcessList {
         }
     }
 
+    fn get_pid_under_cursor(&self, cursor: usize) -> Pid {
+        if self.draw_tree {
+            self.data.tree[cursor].1
+        } else {
+            let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
+            processes.sort_unstable_by(|a, b| match self.sort {
+                Sort::CpuAsc => a.cpu_percent.cmp(&b.cpu_percent),
+                Sort::CpuDesc => b.cpu_percent.cmp(&a.cpu_percent),
+                Sort::VmRssAsc => a.vm_rss_value.cmp(&b.vm_rss_value),
+                Sort::VmRssDesc => b.vm_rss_value.cmp(&a.vm_rss_value),
+                Sort::UserAsc => a.username.0.cmp(&b.username.0),
+                Sort::UserDesc => b.username.0.cmp(&a.username.0),
+                Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
+                Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
+            });
+            if self.filter_term.is_some() {
+                processes.retain(|process| {
+                    process
+                        .cmd_line
+                        .0
+                        .contains(self.filter_term.as_ref().unwrap())
+                });
+            }
+            processes[cursor].i
+        }
+    }
+
     fn draw_tree_list(&self, grid: &mut CellBuffer, area: Area, pages: usize, height: usize) {
         let (upper_left, bottom_right) = area;
 
@@ -373,11 +413,10 @@ impl ProcessList {
             .skip(pages * height)
             .take(height)
         {
-            let fg_color = Color::Default;
-            let bg_color = if pages * height + y_offset == self.cursor {
-                Color::Byte(235)
+            let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
+                (Color::White, Color::Byte(235))
             } else {
-                Color::Default
+                (Color::Default, Color::Default)
             };
             let p = &self.processes[self.data.processes_index[pid]];
             match executable_path_color(&p.cmd_line) {
@@ -569,7 +608,7 @@ impl Component for ProcessList {
                     Color::Default,
                     Color::Default,
                     Attr::Bold,
-                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
+                    (pos_inc(upper_left!(area), (1, 1)), bottom_right!(area)),
                     false,
                 );
                 dirty_areas.push_back((
@@ -724,6 +763,8 @@ impl Component for ProcessList {
 
             if self.draw_tree {
                 self.draw_tree_list(grid, (upper_left, bottom_right), pages, height);
+                self.height = self.data.tree.len();
+                self.cursor = std::cmp::min(self.height, self.cursor);
             } else {
                 let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
                 processes.sort_unstable_by(|a, b| match self.sort {
@@ -748,12 +789,12 @@ impl Component for ProcessList {
                 self.cursor = std::cmp::min(self.height, self.cursor);
 
                 for p in processes.iter().skip(pages * height).take(height) {
-                    let fg_color = Color::Default;
-                    let bg_color = if pages * height + y_offset == self.cursor {
-                        Color::Byte(235)
+                    let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
+                        (Color::White, Color::Byte(235))
                     } else {
-                        Color::Default
+                        (Color::Default, Color::Default)
                     };
+
                     match executable_path_color(&p.cmd_line) {
                         Ok((path, bin, rest)) => {
                             let (x, y) = write_string_to_grid(
@@ -1000,12 +1041,18 @@ impl Component for ProcessList {
             } else {
                 format!("invalid [{}]", *n)
             };
+            let pid = self.get_pid_under_cursor(self.cursor);
             write_string_to_grid(
                 &format!(
                     "{cmd_line} [{pid}]",
-                    pid = self.processes[self.cursor].i,
-                    cmd_line = &self.processes[self.cursor].cmd_line.0
-                        [0..std::cmp::min(26, self.processes[self.cursor].cmd_line.len())],
+                    pid = pid,
+                    cmd_line = &self.processes[self.data.processes_index[&pid]].cmd_line.0[0
+                        ..std::cmp::min(
+                            26,
+                            self.processes[self.data.processes_index[&pid]]
+                                .cmd_line
+                                .len()
+                        )],
                 ),
                 grid,
                 Color::Default,
@@ -1029,63 +1076,6 @@ impl Component for ProcessList {
                 ),
                 false,
             );
-            /*
-            let rows = SIGNAL_LIST.len() / width!(area) + 6;
-            let box_area = (pos_inc(upper_left, (0, height - rows)), bottom_right);
-            clear_area(grid, box_area);
-            create_box(grid, box_area);
-            let write_area = (
-                pos_inc(upper_left, (3, height - rows + 1)),
-                pos_dec(bottom_right, (3, 0)),
-            );
-            let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-            processes.sort_unstable_by(|a, b| b.cpu_percent.cmp(&a.cpu_percent));
-            let (_, y) = write_string_to_grid(
-                &format!("pid {}", processes[self.cursor].i,),
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Default,
-                write_area,
-                false,
-            );
-            let (_, y) = write_string_to_grid(
-                &format!("cmd_line {}", processes[self.cursor].cmd_line),
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Default,
-                (
-                    (get_x(upper_left!(write_area)), y + 1),
-                    bottom_right!(write_area),
-                ),
-                false,
-            );
-            let (_, y) = write_string_to_grid(
-                &format!("sig_no {}", n),
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Default,
-                (
-                    (get_x(upper_left!(write_area)), y + 1),
-                    bottom_right!(write_area),
-                ),
-                false,
-            );
-            write_string_to_grid(
-                SIGNAL_LIST,
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Default,
-                (
-                    (get_x(upper_left!(write_area)), y + 1),
-                    bottom_right!(write_area),
-                ),
-                true,
-            );
-            */
         }
 
         self.dirty = false;
@@ -1144,18 +1134,23 @@ impl Component for ProcessList {
                     }
                 }
             }
-            UIEvent::Input(k) if *k == map["filter"] => {
+            UIEvent::Input(k) if *k == map["filter"] && self.mode.is_normal() => {
                 self.filter_term = Some(String::new());
                 self.draw_tree = false;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["follow process group"] => {
-                self.mode = Follow(0);
+            UIEvent::Input(k) if *k == map["follow process group"] && !self.mode.is_follow() => {
+                let pid = self.get_pid_under_cursor(self.cursor);
+                self.mode = Follow(pid);
+                self.freeze = false;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["freeze updates"] && self.mode == Normal => {
+            UIEvent::Input(k)
+                if *k == map["freeze updates"]
+                    && (self.mode.is_normal() || self.mode.is_follow()) =>
+            {
                 self.freeze = !self.freeze;
                 self.force_redraw = true;
                 self.dirty = true;
@@ -1167,10 +1162,15 @@ impl Component for ProcessList {
                 self.force_redraw = true;
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
-                self.mode = Normal;
-                self.freeze = false;
+                /* layered cancelling */
+                if self.mode != Normal {
+                    self.mode = Normal;
+                } else if self.filter_term.is_some() {
+                    self.filter_term = None;
+                } else {
+                    self.freeze = false;
+                }
                 self.force_redraw = true;
-                self.filter_term = None;
                 self.dirty = true;
             }
             UIEvent::Input(k)
@@ -1221,19 +1221,8 @@ impl Component for ProcessList {
                 if let Kill(ref n) = self.mode {
                     use nix::sys::signal::kill;
 
-                    let mut processes = self.processes.iter().collect::<Vec<&ProcessDisplay>>();
-                    processes.sort_unstable_by(|a, b| match self.sort {
-                        Sort::CpuAsc => a.cpu_percent.cmp(&b.cpu_percent),
-                        Sort::CpuDesc => b.cpu_percent.cmp(&a.cpu_percent),
-                        Sort::VmRssAsc => a.vm_rss_value.cmp(&b.vm_rss_value),
-                        Sort::VmRssDesc => b.vm_rss_value.cmp(&a.vm_rss_value),
-                        Sort::UserAsc => a.username.0.cmp(&b.username.0),
-                        Sort::UserDesc => b.username.0.cmp(&a.username.0),
-                        Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
-                        Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
-                    });
                     kill(
-                        nix::unistd::Pid::from_raw(processes[self.cursor].i),
+                        nix::unistd::Pid::from_raw(self.get_pid_under_cursor(self.cursor)),
                         nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
                     )
                     .ok()
@@ -1340,13 +1329,6 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             continue;
         }
 
-        if follow_pid.is_some()
-            && process.ppid != follow_pid.unwrap()
-            && process.pid != follow_pid.unwrap()
-        {
-            continue;
-        }
-
         let mut process_display = ProcessDisplay {
             i: process.pid,
             p: process.ppid,
@@ -1378,12 +1360,46 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
         processes.push(process_display);
     }
     *data_cpu_stat = cpu_stat;
+    let mut keep_list = HashSet::new();
+    if follow_pid.is_some() && processes_index.contains_key(follow_pid.as_ref().unwrap()) {
+        let mut stack = Vec::with_capacity(32);
+        let p = &processes[processes_index[&follow_pid.unwrap()]];
+        keep_list.insert(p.i);
+        if let Some(children) = parents.get(&p.i) {
+            stack.extend(children.iter().cloned());
+        }
+        while let Some(pid) = stack.pop() {
+            keep_list.insert(pid);
+            if let Some(children) = parents.get(&pid) {
+                stack.extend(children.iter().cloned());
+            }
+        }
+        stack.push(p.p);
+        while let Some(pid) = stack.pop() {
+            if pid == 0 {
+                continue;
+            }
+            keep_list.insert(pid);
+            if processes[processes_index[&pid]].p != 0 {
+                stack.push(processes[processes_index[&pid]].p);
+            }
+        }
+        processes_index.clear();
+        processes.retain(|entry| keep_list.contains(&entry.i));
+        for (i, p) in processes.iter().enumerate() {
+            processes_index.insert(p.i, i);
+        }
+    }
+
     let mut stack = Vec::with_capacity(processes.len());
     stack.push((0, 1));
     while let Some((ind, pid)) = stack.pop() {
         tree_index.insert(pid, tree.len());
         tree.push((ind, pid));
         if let Some(children) = parents.get_mut(&pid) {
+            if !keep_list.is_empty() {
+                children.retain(|c| keep_list.contains(c));
+            }
             children.sort_unstable_by(|a, b| {
                 let a = &processes[processes_index[a]];
                 let b = &processes[processes_index[b]];

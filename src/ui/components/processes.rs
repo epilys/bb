@@ -212,6 +212,13 @@ impl ProcessListMode {
             _ => false,
         }
     }
+
+    fn is_kill(&self) -> bool {
+        match self {
+            Kill(_) => true,
+            _ => false,
+        }
+    }
 }
 
 use ProcessListMode::*;
@@ -683,45 +690,12 @@ impl Component for ProcessList {
             tick = true;
         }
 
-        if !self.dirty && !tick {
-            if let Follow(ref pid) = self.mode {
-                let (_, y) = write_string_to_grid(
-                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (pos_inc(upper_left!(area), (1, 1)), bottom_right!(area)),
-                    false,
-                );
-                dirty_areas.push_back((
-                    pos_inc(upper_left!(area), (0, 1)),
-                    set_y(bottom_right!(area), y),
-                ));
-            } else if let Locate(ref pid) = self.mode {
-                let (_, y) = write_string_to_grid(
-                    &format!("Highlighting PID == {pid}", pid = pid),
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (pos_inc(upper_left!(area), (1, 1)), bottom_right!(area)),
-                    false,
-                );
-                dirty_areas.push_back((
-                    pos_inc(upper_left!(area), (0, 1)),
-                    set_y(bottom_right!(area), y),
-                ));
-            }
-
-            return;
-        }
-
         let mut upper_left = pos_inc(upper_left!(area), (1, 0));
         let bottom_right = pos_dec(bottom_right!(area), (1, 1));
 
         /* Reserve first row for column headers */
-        let height = height!(area) - 2;
+        let height = height!(area) - 2 - if self.mode.is_locate() { 2 } else { 0 };
+        let width = width!(area);
         let old_pages = (self.cursor) / height;
 
         let old_cursor = self.cursor;
@@ -747,40 +721,6 @@ impl Component for ProcessList {
                     self.cursor = self.height.saturating_sub(1);
                 }
             }
-        }
-
-        if !self.dirty && (!tick/* implies freeze */) && old_cursor != self.cursor {
-            if let Follow(ref pid) = self.mode {
-                let (_, y) = write_string_to_grid(
-                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
-                    false,
-                );
-                dirty_areas.push_back((
-                    pos_inc(upper_left!(area), (0, 1)),
-                    set_y(bottom_right!(area), y),
-                ));
-            } else if let Locate(ref pid) = self.mode {
-                let (_, y) = write_string_to_grid(
-                    &format!("Highlighting PID == {pid}", pid = pid),
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
-                    false,
-                );
-                dirty_areas.push_back((
-                    pos_inc(upper_left!(area), (0, 1)),
-                    set_y(bottom_right!(area), y),
-                ));
-            }
-            /* Nothing to update */
-            return;
         }
 
         let mut pages = (self.cursor) / height;
@@ -815,30 +755,41 @@ impl Component for ProcessList {
 
                 self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
             }
-
             if let Follow(ref pid) = self.mode {
+                let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
                 write_string_to_grid(
-                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    &info,
                     grid,
                     Color::Default,
                     Color::Default,
                     Attr::Bold,
-                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
+                    ),
                     false,
                 );
-
                 upper_left = pos_inc(upper_left, (0, 2));
             } else if let Locate(ref pid) = self.mode {
+                let info = format!("Highlighting PID == {pid}", pid = pid);
                 write_string_to_grid(
-                    &format!("Highlighting PID == {pid}", pid = pid),
+                    &info,
                     grid,
                     Color::Default,
                     Color::Default,
                     Attr::Bold,
-                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
+                    ),
                     false,
                 );
-
                 upper_left = pos_inc(upper_left, (0, 2));
             }
 
@@ -886,6 +837,80 @@ impl Component for ProcessList {
                 Some(Color::White),
             );
 
+            /* Write current selected status if any. eg. if list is frozen, show 'FROZEN'. */
+            {
+                let (mut x, y) = set_y(upper_left!(area), get_y(bottom_right) + 1);
+                if self.freeze {
+                    let (_x, _) = write_string_to_grid(
+                        "  FROZEN  ",
+                        grid,
+                        Color::White,
+                        Color::Byte(26), // DodgerBlue3
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                    x = _x;
+                }
+
+                if self.mode.is_search() {
+                    let (_x, _) = write_string_to_grid(
+                        "  SEARCH  ",
+                        grid,
+                        Color::White,
+                        Color::Byte(88), // DarkRed
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                    x = _x;
+                } else if self.mode.is_follow() {
+                    let (_x, _) = write_string_to_grid(
+                        "  FOLLOW  ",
+                        grid,
+                        Color::White,
+                        Color::Byte(172), // Orange3
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                    x = _x;
+                } else if self.mode.is_locate() {
+                    let (_x, _) = write_string_to_grid(
+                        "  LOCATE  ",
+                        grid,
+                        Color::White,
+                        Color::Green,
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                    x = _x;
+                } else if self.mode.is_kill() {
+                    let (_x, _) = write_string_to_grid(
+                        "  KILL  ",
+                        grid,
+                        Color::White,
+                        Color::Byte(8), // Grey
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                    x = _x;
+                }
+
+                if self.filter_term.is_some() {
+                    write_string_to_grid(
+                        "  FILTER  ",
+                        grid,
+                        Color::White,
+                        Color::Byte(13), // Fuschia
+                        Attr::Bold,
+                        ((x, y), pos_inc(bottom_right, (0, 1))),
+                        false,
+                    );
+                }
+            }
             let mut y_offset = 0;
 
             if self.draw_tree {
@@ -1103,30 +1128,55 @@ impl Component for ProcessList {
             }
         } else if old_cursor != self.cursor {
             if let Follow(ref pid) = self.mode {
+                let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
                 let (_, y) = write_string_to_grid(
-                    &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    &info,
                     grid,
                     Color::Default,
                     Color::Default,
                     Attr::Bold,
-                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
+                    ),
                     false,
                 );
-                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right!(area), y)));
+                dirty_areas.push_back((
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
+                    ),
+                    set_y(bottom_right!(area), y),
+                ));
 
                 upper_left = pos_inc(upper_left, (0, 2));
             } else if let Locate(ref pid) = self.mode {
+                let info = format!("Highlighting PID == {pid}", pid = pid);
                 let (_, y) = write_string_to_grid(
-                    &format!("Highlighting PID == {pid}", pid = pid),
+                    &info,
                     grid,
                     Color::Default,
                     Color::Default,
                     Attr::Bold,
-                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
+                    ),
                     false,
                 );
-                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right!(area), y)));
-
+                dirty_areas.push_back((
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
+                    ),
+                    set_y(bottom_right!(area), y),
+                ));
                 upper_left = pos_inc(upper_left, (0, 2));
             }
 
@@ -1159,24 +1209,38 @@ impl Component for ProcessList {
             dirty_areas.push_back(old_area);
             dirty_areas.push_back(new_area);
         } else if let Follow(ref pid) = self.mode {
+            let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
             let (_, y) = write_string_to_grid(
-                &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                &info,
                 grid,
                 Color::Default,
                 Color::Default,
                 Attr::Bold,
-                (pos_inc(upper_left, (0, 1)), bottom_right),
+                (
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
+                    ),
+                    bottom_right!(area),
+                ),
                 false,
             );
             dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
         } else if let Locate(ref pid) = self.mode {
+            let info = format!("Highlighting PID == {pid}", pid = pid);
             let (_, y) = write_string_to_grid(
-                &format!("Highlighting PID == {pid}", pid = pid),
+                &info,
                 grid,
                 Color::Default,
                 Color::Default,
                 Attr::Bold,
-                (pos_inc(upper_left, (0, 1)), bottom_right),
+                (
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
+                    ),
+                    bottom_right!(area),
+                ),
                 false,
             );
             dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
@@ -1374,7 +1438,9 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
                 /* layered cancelling */
-                if self.mode != Normal {
+                if self.draw_help {
+                    self.draw_help = false;
+                } else if self.mode != Normal {
                     self.mode = Normal;
                 } else if self.filter_term.is_some() {
                     self.filter_term = None;

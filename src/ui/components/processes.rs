@@ -1097,11 +1097,11 @@ impl Component for ProcessList {
 
         if let Kill(ref n) = self.mode {
             let (cols, rows) = grid.size();
-            let margin_left = (cols / 2).saturating_sub(16);
+            let margin_left = (cols / 2).saturating_sub(20);
             let margin_top = (rows / 2).saturating_sub(12);
             let box_area = (
                 (margin_left, margin_top),
-                (margin_left + 32, margin_top + 12),
+                (margin_left + 36, margin_top + 12),
             );
             clear_area(grid, box_area);
             create_box(grid, box_area);
@@ -1124,7 +1124,7 @@ impl Component for ProcessList {
             }
             let box_area = (
                 (margin_left, margin_top + 13),
-                (margin_left + 32, margin_top + 16),
+                (margin_left + 36, margin_top + 16),
             );
             clear_area(grid, box_area);
             create_box(grid, box_area);

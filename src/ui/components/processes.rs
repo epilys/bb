@@ -171,6 +171,7 @@ pub struct ProcessList {
     /* stop updating data */
     freeze: bool,
     draw_tree: bool,
+    draw_help: bool,
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
     sort: Sort,
@@ -298,6 +299,7 @@ impl ProcessList {
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
             draw_tree: false,
+            draw_help: false,
             mode: Normal,
             dirty: true,
             sort: Sort::CpuDesc,
@@ -339,7 +341,54 @@ impl ProcessList {
         }
     }
 
-    fn draw_tree_list(&self, grid: &mut CellBuffer, area: Area, pages: usize, height: usize) {
+    fn draw_help_box(&self, grid: &mut CellBuffer) {
+        let (cols, rows) = grid.size();
+        let margin_left = (cols / 2).saturating_sub(20);
+        let margin_top = (rows / 2).saturating_sub(12);
+        let box_area = (
+            (margin_left, margin_top),
+            (margin_left + 36, margin_top + 12),
+        );
+        clear_area(grid, box_area);
+        create_box(grid, box_area);
+        let shortcuts_map = &self.get_shortcuts()[""];
+        let max_key = shortcuts_map.keys().map(|k| k.len()).max().unwrap();
+        let mut shortcuts = shortcuts_map
+            .iter()
+            .map(|(k, v)| (*k, v))
+            .collect::<Vec<(&str, &Key)>>();
+        shortcuts.sort_by_key(|s| s.0);
+        let mut y = 0;
+        for (k, v) in shortcuts.iter() {
+            write_string_to_grid(
+                &format!("{k:>max_key$} {v}", k = k, v = v, max_key = max_key),
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Default,
+                (
+                    pos_inc(upper_left!(box_area), (2, 4 + y)),
+                    bottom_right!(box_area),
+                ),
+                false,
+            );
+            y += 1;
+        }
+        let box_area = (
+            (margin_left, margin_top + 13),
+            (margin_left + 36, margin_top + 16),
+        );
+        clear_area(grid, box_area);
+        create_box(grid, box_area);
+    }
+
+    fn draw_tree_list(
+        &mut self,
+        grid: &mut CellBuffer,
+        area: Area,
+        mut pages: usize,
+        height: usize,
+    ) {
         let (upper_left, bottom_right) = area;
 
         let mut y_offset = 0;
@@ -347,6 +396,7 @@ impl ProcessList {
         let mut branches = vec![];
         let mut child_counters = vec![0];
 
+        self.cursor = std::cmp::min(self.height, self.cursor);
         let mut lines = Vec::with_capacity(2048);
         let mut iter = self.data.tree.iter().peekable();
         while let Some((ind, pid)) = iter.next() {
@@ -432,6 +482,7 @@ impl ProcessList {
             } else {
                 (Color::Default, Color::Default)
             };
+
             let p = &self.processes[self.data.processes_index[pid]];
             match executable_path_color(&p.cmd_line) {
                 Ok((path, bin, rest)) => {
@@ -1172,6 +1223,10 @@ impl Component for ProcessList {
             );
         }
 
+        if self.draw_help {
+            self.draw_help_box(grid);
+        }
+
         self.dirty = false;
     }
 
@@ -1216,6 +1271,14 @@ impl Component for ProcessList {
                     _ => return,
                 };
 
+                self.force_redraw = true;
+                self.dirty = true;
+            }
+            UIEvent::Input(k)
+                if *k == map["toggle help overlay"]
+                    && self.filter_term.is_none() =>
+            {
+                self.draw_help = !self.draw_help;
                 self.force_redraw = true;
                 self.dirty = true;
             }
@@ -1352,6 +1415,7 @@ impl Component for ProcessList {
         map.insert("kill process", Key::Char('k'));
         map.insert("filter", Key::Char('/'));
         map.insert("cancel", Key::Esc);
+        map.insert("toggle help overlay", Key::Char('h'));
         let mut ret: ShortcutMaps = Default::default();
         ret.insert("".to_string(), map);
         ret

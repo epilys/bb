@@ -77,6 +77,7 @@ impl fmt::Display for Key {
             F(n) => write!(f, "F{}", n),
             Char('\t') => write!(f, "Tab"),
             Char('\n') => write!(f, "Enter"),
+            Char(' ') => write!(f, "Space"),
             Char(c) => write!(f, "{}", c),
             Alt(c) => write!(f, "M-{}", c),
             Ctrl(c) => write!(f, "C-{}", c),

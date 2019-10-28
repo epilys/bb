@@ -183,6 +183,7 @@ enum ProcessListMode {
     Normal,
     Follow(Pid),
     Locate(Pid),
+    Search(String),
     Kill(u16),
 }
 
@@ -201,6 +202,13 @@ impl ProcessListMode {
     fn is_locate(&self) -> bool {
         match self {
             Locate(_) => true,
+            _ => false,
+        }
+    }
+
+    fn is_search(&self) -> bool {
+        match self {
+            Search(_) => true,
             _ => false,
         }
     }
@@ -399,8 +407,18 @@ impl ProcessList {
         self.cursor = std::cmp::min(self.height, self.cursor);
         let mut lines = Vec::with_capacity(2048);
         let mut iter = self.data.tree.iter().peekable();
+
+        let mut stop_search = false;
         while let Some((ind, pid)) = iter.next() {
             let p = &self.processes[self.data.processes_index[pid]];
+            if let Search(ref search) = self.mode {
+                if !stop_search && search.len() > 1 && p.cmd_line.0.contains(search) {
+                    let i = lines.len(); /* get index from lines to avoid making another counter */
+                    pages = i / height;
+                    self.cursor = i;
+                    stop_search = true;
+                }
+            }
             let has_sibling: bool = child_counters
                 .get(*ind)
                 .map(|n| {
@@ -765,7 +783,7 @@ impl Component for ProcessList {
             return;
         }
 
-        let pages = (self.cursor) / height;
+        let mut pages = (self.cursor) / height;
         if pages != old_pages {
             tick = true;
         }
@@ -823,10 +841,14 @@ impl Component for ProcessList {
 
                 upper_left = pos_inc(upper_left, (0, 2));
             }
-            let cmd_header = self
-                .filter_term
-                .as_ref()
-                .map(|filter_term| format!("CMD_LINE (filter: {})", filter_term));
+
+            let cmd_header = if let Search(ref p) = self.mode {
+                Some(format!("CMD_LINE (search: {})", p))
+            } else {
+                self.filter_term
+                    .as_ref()
+                    .map(|filter_term| format!("CMD_LINE (filter: {})", filter_term))
+            };
 
             /* Write column headers */
             let (x, y) = write_string_to_grid(
@@ -891,7 +913,21 @@ impl Component for ProcessList {
                     });
                 }
                 self.height = processes.len();
-                self.cursor = std::cmp::min(self.height, self.cursor);
+                self.cursor = if let Search(ref search) = self.mode {
+                    let mut ret = self.cursor;
+                    if search.len() > 1 {
+                        for (i, p) in processes.iter().enumerate() {
+                            if p.cmd_line.0.contains(search) {
+                                pages = i / height;
+                                ret = i;
+                                break;
+                            }
+                        }
+                    }
+                    ret
+                } else {
+                    std::cmp::min(self.height, self.cursor)
+                };
 
                 for p in processes.iter().skip(pages * height).take(height) {
                     let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
@@ -1276,6 +1312,7 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k)
                 if *k == map["toggle help overlay"]
+                    && !self.mode.is_search()
                     && self.filter_term.is_none() =>
             {
                 self.draw_help = !self.draw_help;
@@ -1320,6 +1357,15 @@ impl Component for ProcessList {
                 self.dirty = true;
                 self.force_redraw = true;
             }
+            UIEvent::Input(k)
+                if *k == map["search process by name"]
+                    && self.mode.is_normal()
+                    && self.filter_term.is_none() =>
+            {
+                self.mode = Search(String::new());
+                self.force_redraw = true;
+                self.dirty = true;
+            }
             UIEvent::Input(k) if *k == map["kill process"] => {
                 self.mode = Kill(0);
                 self.freeze = true;
@@ -1340,13 +1386,15 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k)
                 if *k == map["toggle tree view"]
-                    && !(self.draw_tree && self.filter_term.is_some()) =>
+                    && !(self.filter_term.is_some() || self.mode.is_search()) =>
             {
                 self.draw_tree = !self.draw_tree;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(Key::Char(f)) if self.mode != Normal && f.is_numeric() => {
+            UIEvent::Input(Key::Char(f))
+                if !self.mode.is_normal() && !self.mode.is_search() && f.is_numeric() =>
+            {
                 if let Kill(ref mut n) = self.mode {
                     if let Some(add) = (*n).checked_mul(10) {
                         *n = add
@@ -1362,11 +1410,26 @@ impl Component for ProcessList {
                     self.dirty = true;
                 }
             }
+            UIEvent::Input(Key::Char(c)) if self.mode.is_search() => {
+                if let Search(ref mut p) = self.mode {
+                    if !c.is_ascii_control() {
+                        p.push(*c);
+                        self.force_redraw = true;
+                        self.dirty = true;
+                    }
+                }
+            }
             UIEvent::Input(Key::Backspace) if self.mode != Normal => {
                 if let Kill(ref mut n) = self.mode {
                     *n = *n / 10;
                 } else if let Locate(ref mut p) = self.mode {
                     *p = *p / 10;
+                } else if let Search(ref mut p) = self.mode {
+                    if p.is_empty() {
+                        self.mode = Normal;
+                    } else {
+                        p.pop();
+                    }
                 }
                 self.dirty = true;
                 self.force_redraw = true;
@@ -1413,7 +1476,8 @@ impl Component for ProcessList {
         map.insert("freeze updates", Key::Char('f'));
         map.insert("toggle tree view", Key::Char('t'));
         map.insert("kill process", Key::Char('k'));
-        map.insert("filter", Key::Char('/'));
+        map.insert("filter", Key::Char(' '));
+        map.insert("search process by name", Key::Char('/'));
         map.insert("cancel", Key::Esc);
         map.insert("toggle help overlay", Key::Char('h'));
         let mut ret: ShortcutMaps = Default::default();

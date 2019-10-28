@@ -181,6 +181,7 @@ pub struct ProcessList {
 enum ProcessListMode {
     Normal,
     Follow(Pid),
+    Locate(Pid),
     Kill(u16),
 }
 
@@ -192,6 +193,13 @@ impl ProcessListMode {
     fn is_follow(&self) -> bool {
         match self {
             Follow(_) => true,
+            _ => false,
+        }
+    }
+
+    fn is_locate(&self) -> bool {
+        match self {
+            Locate(_) => true,
             _ => false,
         }
     }
@@ -415,6 +423,12 @@ impl ProcessList {
         {
             let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
                 (Color::White, Color::Byte(235))
+            } else if let Locate(highlighted_pid) = self.mode {
+                if highlighted_pid == *pid {
+                    (Color::Red, Color::Yellow)
+                } else {
+                    (Color::Default, Color::Default)
+                }
             } else {
                 (Color::Default, Color::Default)
             };
@@ -615,6 +629,20 @@ impl Component for ProcessList {
                     pos_inc(upper_left!(area), (0, 1)),
                     set_y(bottom_right!(area), y),
                 ));
+            } else if let Locate(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Highlighting PID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left!(area), (1, 1)), bottom_right!(area)),
+                    false,
+                );
+                dirty_areas.push_back((
+                    pos_inc(upper_left!(area), (0, 1)),
+                    set_y(bottom_right!(area), y),
+                ));
             }
 
             return;
@@ -667,6 +695,20 @@ impl Component for ProcessList {
                     pos_inc(upper_left!(area), (0, 1)),
                     set_y(bottom_right!(area), y),
                 ));
+            } else if let Locate(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Highlighting PID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left!(area), (0, 1)), bottom_right!(area)),
+                    false,
+                );
+                dirty_areas.push_back((
+                    pos_inc(upper_left!(area), (0, 1)),
+                    set_y(bottom_right!(area), y),
+                ));
             }
             /* Nothing to update */
             return;
@@ -708,6 +750,18 @@ impl Component for ProcessList {
             if let Follow(ref pid) = self.mode {
                 write_string_to_grid(
                     &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    false,
+                );
+
+                upper_left = pos_inc(upper_left, (0, 2));
+            } else if let Locate(ref pid) = self.mode {
+                write_string_to_grid(
+                    &format!("Highlighting PID == {pid}", pid = pid),
                     grid,
                     Color::Default,
                     Color::Default,
@@ -791,6 +845,12 @@ impl Component for ProcessList {
                 for p in processes.iter().skip(pages * height).take(height) {
                     let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
                         (Color::White, Color::Byte(235))
+                    } else if let Locate(highlighted_pid) = self.mode {
+                        if highlighted_pid == p.i {
+                            (Color::Red, Color::Yellow)
+                        } else {
+                            (Color::Default, Color::Default)
+                        }
                     } else {
                         (Color::Default, Color::Default)
                     };
@@ -968,6 +1028,19 @@ impl Component for ProcessList {
                 dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right!(area), y)));
 
                 upper_left = pos_inc(upper_left, (0, 2));
+            } else if let Locate(ref pid) = self.mode {
+                let (_, y) = write_string_to_grid(
+                    &format!("Highlighting PID == {pid}", pid = pid),
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (pos_inc(upper_left, (0, 1)), bottom_right),
+                    false,
+                );
+                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right!(area), y)));
+
+                upper_left = pos_inc(upper_left, (0, 2));
             }
 
             let new_area = (
@@ -977,6 +1050,17 @@ impl Component for ProcessList {
                     get_y(upper_left) + self.cursor + 2 - pages * height,
                 ),
             );
+            let old_pid = self.get_pid_under_cursor(old_cursor);
+            change_colors(grid, new_area, None, Some(Color::Byte(235)));
+            let bg_color = if let Locate(highlighted_pid) = self.mode {
+                if highlighted_pid == old_pid {
+                    Color::Yellow
+                } else {
+                    Color::Default
+                }
+            } else {
+                Color::Default
+            };
             let old_area = (
                 pos_inc(upper_left, (0, old_cursor + 2 - old_pages * height)),
                 set_y(
@@ -984,13 +1068,23 @@ impl Component for ProcessList {
                     get_y(upper_left) + old_cursor + 2 - old_pages * height,
                 ),
             );
-            change_colors(grid, new_area, None, Some(Color::Byte(235)));
-            change_colors(grid, old_area, None, Some(Color::Default));
+            change_colors(grid, old_area, None, Some(bg_color));
             dirty_areas.push_back(old_area);
             dirty_areas.push_back(new_area);
         } else if let Follow(ref pid) = self.mode {
             let (_, y) = write_string_to_grid(
                 &format!("Following PID == {pid} || PPID == {pid}", pid = pid),
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Bold,
+                (pos_inc(upper_left, (0, 1)), bottom_right),
+                false,
+            );
+            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
+        } else if let Locate(ref pid) = self.mode {
+            let (_, y) = write_string_to_grid(
+                &format!("Highlighting PID == {pid}", pid = pid),
                 grid,
                 Color::Default,
                 Color::Default,
@@ -1149,11 +1243,19 @@ impl Component for ProcessList {
             }
             UIEvent::Input(k)
                 if *k == map["freeze updates"]
-                    && (self.mode.is_normal() || self.mode.is_follow()) =>
+                    && (self.mode.is_normal()
+                        || self.mode.is_follow()
+                        || self.mode.is_locate()) =>
             {
                 self.freeze = !self.freeze;
                 self.force_redraw = true;
                 self.dirty = true;
+            }
+            UIEvent::Input(k) if *k == map["locate process by pid"] && self.mode.is_normal() => {
+                self.mode = Locate(0);
+                self.freeze = true;
+                self.dirty = true;
+                self.force_redraw = true;
             }
             UIEvent::Input(k) if *k == map["kill process"] => {
                 self.mode = Kill(0);
@@ -1188,7 +1290,7 @@ impl Component for ProcessList {
                             .checked_add(f.to_digit(10).unwrap() as u16)
                             .unwrap_or(*n);
                     }
-                } else if let Follow(ref mut p) = self.mode {
+                } else if let Locate(ref mut p) = self.mode {
                     if let Some(add) = (*p).checked_mul(10) {
                         *p = add
                             .checked_add(f.to_digit(10).unwrap() as i32)
@@ -1200,7 +1302,7 @@ impl Component for ProcessList {
             UIEvent::Input(Key::Backspace) if self.mode != Normal => {
                 if let Kill(ref mut n) = self.mode {
                     *n = *n / 10;
-                } else if let Follow(ref mut p) = self.mode {
+                } else if let Locate(ref mut p) = self.mode {
                     *p = *p / 10;
                 }
                 self.dirty = true;
@@ -1244,6 +1346,7 @@ impl Component for ProcessList {
     fn get_shortcuts(&self) -> ShortcutMaps {
         let mut map: ShortcutMap = Default::default();
         map.insert("follow process group", Key::Char('F'));
+        map.insert("locate process by pid", Key::Char('L'));
         map.insert("freeze updates", Key::Char('f'));
         map.insert("toggle tree view", Key::Char('t'));
         map.insert("kill process", Key::Char('k'));

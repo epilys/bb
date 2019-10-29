@@ -70,15 +70,28 @@ impl Bytes {
 #[derive(Debug, Copy, Clone)]
 pub struct Stat {
     pub user_time: usize,
-    pub system_time: usize,
     pub nice_time: usize,
+    pub system_time: usize,
     pub idle_time: usize,
     pub iowait_time: usize,
+    pub irq: usize,
+    pub soft_irq: usize,
+    pub steal: usize,
+    pub guest: usize,
+    pub guest_nice: usize,
 }
 
 impl Stat {
     pub fn total_time(&self) -> usize {
-        self.user_time + self.system_time + self.nice_time + self.idle_time + self.iowait_time
+        (self.user_time - self.guest)
+            + self.system_time
+            + self.irq
+            + self.soft_irq
+            + (self.nice_time - self.guest_nice)
+            + self.idle_time
+            + self.iowait_time
+            + (self.guest + self.guest_nice)
+            + self.steal
     }
 }
 
@@ -98,17 +111,26 @@ pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
         let mut mut_value_iter = line.split_whitespace().skip(1);
 
         let user_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        /* skip nice time */
         let nice_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
         let system_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
         let idle_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
         let iowait_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let irq = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let soft_irq = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let steal = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let guest = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let guest_nice = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
         ret.push(Stat {
             user_time,
             system_time,
             nice_time,
             idle_time,
             iowait_time,
+            irq,
+            soft_irq,
+            steal,
+            guest,
+            guest_nice,
         });
     }
     while !line.starts_with("btime") {

@@ -153,7 +153,7 @@ pub struct ProcessDisplay {
     pub state: State,
     pub cmd_line: CmdLineString,
     pub username: UserString,
-    pub utime: usize,
+    pub rtime: usize,
 }
 
 /* process list components */
@@ -283,7 +283,7 @@ pub struct Process {
     pub state: State,
     pub uid: u32,
     pub cmd_line: String,
-    pub utime: usize,
+    pub rtime: usize,
 }
 
 impl fmt::Display for ProcessList {
@@ -518,7 +518,7 @@ impl ProcessList {
                             ppid = p.ppid,
                             username = p.username,
                             vm_rss = p.vm_rss,
-                            cpu_percent = p.cpu_percent,
+                            cpu_percent = (p.cpu_percent as f32 / 1000.0),
                             state = p.state,
                             max_pid = self.maxima.pid,
                             max_ppid = self.maxima.ppid,
@@ -600,7 +600,7 @@ impl ProcessList {
                             ppid = p.ppid,
                             username = p.username,
                             vm_rss = p.vm_rss,
-                            cpu_percent = p.cpu_percent,
+                            cpu_percent = (p.cpu_percent as f32 / 100.0),
                             state = p.state,
                             max_pid = self.maxima.pid,
                             max_ppid = self.maxima.ppid,
@@ -976,7 +976,7 @@ impl Component for ProcessList {
                             ppid = p.ppid,
                             username = p.username,
                             vm_rss = p.vm_rss,
-                            cpu_percent = p.cpu_percent,
+                            cpu_percent = (p.cpu_percent as f64 / 100.0),
                             state = p.state,
                             max_pid = self.maxima.pid,
                             max_ppid = self.maxima.ppid,
@@ -1057,7 +1057,7 @@ impl Component for ProcessList {
                             ppid = p.ppid,
                             username = p.username,
                             vm_rss = p.vm_rss,
-                            cpu_percent = p.cpu_percent,
+                            cpu_percent = (p.cpu_percent as f64 / 100.0),
                             state = p.state,
                             max_pid = self.maxima.pid,
                             max_ppid = self.maxima.ppid,
@@ -1604,7 +1604,11 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
     } = data;
 
     let mut processes = Vec::with_capacity(2048);
-    let cpu_stat = get_stat(&mut 0).remove(0);
+    let mut cpu_stats = get_stat(&mut 0);
+    let cpu_no = cpu_stats.len() - 1;
+    let cpu_stat = cpu_stats.remove(0);
+    let multiplier = (cpu_no as f64) * 10000.0;
+    let divisor = (cpu_stat.total_time() - data_cpu_stat.total_time()) as f64;
     for entry in std::fs::read_dir("/proc/").unwrap() {
         let dir = entry.unwrap();
         if let Some(fname) = dir.file_name().to_str() {
@@ -1626,31 +1630,27 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             continue;
         }
 
-        let mut process_display = ProcessDisplay {
+        let process_display = ProcessDisplay {
             i: process.pid,
             p: process.ppid,
             pid: PidString(process.pid.to_string()),
             ppid: PpidString(process.ppid.to_string()),
             vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
             vm_rss_value: process.vm_rss * 1024,
-            cpu_percent: (100.0
-                * ((process.utime
+            cpu_percent: ((multiplier
+                * (process.rtime
                     - processes_times
                         .get(&process.pid)
                         .map(|v| *v)
-                        .unwrap_or(process.utime)) as f64
-                    / ((cpu_stat.total_time() - data_cpu_stat.total_time()) as f64)))
-                as usize,
-            utime: process.utime,
+                        .unwrap_or(process.rtime)) as f64)
+                / divisor) as usize,
+            rtime: process.rtime,
             state: process.state,
             cmd_line: CmdLineString(process.cmd_line),
             username: UserString(crate::ui::username(process.uid)),
         };
-        if process_display.cpu_percent > 100 {
-            process_display.cpu_percent = 0;
-        }
 
-        processes_times.insert(process.pid, process_display.utime);
+        processes_times.insert(process.pid, process_display.rtime);
         parents.entry(process.ppid).or_default().push(process.pid);
 
         processes_index.insert(process.pid, processes.len());
@@ -1731,7 +1731,7 @@ fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
         ppid: 0,
         vm_rss: 0,
         uid: 0,
-        utime: 0,
+        rtime: 0,
         state: State::Waiting,
         cmd_line: String::new(),
     };
@@ -1820,10 +1820,8 @@ fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
     /* values are separated by whitespace and are in a specific order */
     if !res.is_empty() {
         let mut vals = res.split_whitespace().skip(13);
-        ret.utime = err!(usize::from_str(none_err!(vals.next())));
-        ret.utime += err!(usize::from_str(none_err!(vals.next())));
-        ret.utime += err!(usize::from_str(none_err!(vals.next())));
-        ret.utime += err!(usize::from_str(none_err!(vals.next())));
+        ret.rtime = err!(usize::from_str(none_err!(vals.next()))); /* utime */
+        ret.rtime += err!(usize::from_str(none_err!(vals.next()))); /* stime */
     }
     Ok(ret)
 }

@@ -511,7 +511,7 @@ impl ProcessList {
             let p = &self.processes[self.data.processes_index[pid]];
             match executable_path_color(&p.cmd_line) {
                 Ok((path, bin, rest)) => {
-                    let (x, y) = write_string_to_grid(
+                    let (x, _) = write_string_to_grid(
                             &format!(
                     "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  {branches}",
                             pid = p.pid,
@@ -576,7 +576,7 @@ impl ProcessList {
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
                         false,
                     );
-                    let (x, _) = write_string_to_grid(
+                    write_string_to_grid(
                         rest,
                         grid,
                         fg_color,
@@ -587,7 +587,10 @@ impl ProcessList {
                     );
                     change_colors(
                         grid,
-                        ((x, y), set_y(bottom_right, y)),
+                        (
+                            pos_inc(upper_left, (x - 1 + rest.len(), y_offset + 2)),
+                            set_y(bottom_right, get_y(upper_left) + y_offset + 2),
+                        ),
                         Some(fg_color),
                         Some(bg_color),
                     );
@@ -650,7 +653,7 @@ impl ProcessList {
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
                         false,
                     );
-                    let (x, y) = write_string_to_grid(
+                    write_string_to_grid(
                         rest,
                         grid,
                         fg_color,
@@ -661,7 +664,10 @@ impl ProcessList {
                     );
                     change_colors(
                         grid,
-                        ((x, y), set_y(bottom_right, y)),
+                        (
+                            pos_inc(upper_left, (x - 1 + rest.len(), y_offset + 2)),
+                            set_y(bottom_right, get_y(upper_left) + y_offset + 2),
+                        ),
                         Some(fg_color),
                         Some(bg_color),
                     );
@@ -969,7 +975,7 @@ impl Component for ProcessList {
 
                     match executable_path_color(&p.cmd_line) {
                         Ok((path, bin, rest)) => {
-                            let (x, y) = write_string_to_grid(
+                            let (x, _) = write_string_to_grid(
                             &format!(
                     "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
                             pid = p.pid,
@@ -1033,7 +1039,7 @@ impl Component for ProcessList {
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
                                 false,
                             );
-                            let (x, _) = write_string_to_grid(
+                            write_string_to_grid(
                                 rest,
                                 grid,
                                 fg_color,
@@ -1044,7 +1050,10 @@ impl Component for ProcessList {
                             );
                             change_colors(
                                 grid,
-                                ((x, y), set_y(bottom_right, y)),
+                                (
+                                    pos_inc(upper_left, (x - 1 + rest.len(), y_offset + 2)),
+                                    set_y(bottom_right, get_y(upper_left) + y_offset + 2),
+                                ),
                                 Some(fg_color),
                                 Some(bg_color),
                             );
@@ -1106,7 +1115,7 @@ impl Component for ProcessList {
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
                                 false,
                             );
-                            let (x, y) = write_string_to_grid(
+                            write_string_to_grid(
                                 rest,
                                 grid,
                                 fg_color,
@@ -1117,7 +1126,10 @@ impl Component for ProcessList {
                             );
                             change_colors(
                                 grid,
-                                ((x, y), set_y(bottom_right, y)),
+                                (
+                                    pos_inc(upper_left, (x - 1 + rest.len(), y_offset + 2)),
+                                    set_y(bottom_right, get_y(upper_left) + y_offset + 2),
+                                ),
                                 Some(fg_color),
                                 Some(bg_color),
                             );

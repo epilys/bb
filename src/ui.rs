@@ -47,7 +47,7 @@ pub mod username {
     use libc;
     use std::ptr::null_mut;
     /* taken from whoami-0.1.1 */
-    fn getpwuid(pw_uid: u32, buffer: &mut [i8; 16384]) -> libc::passwd {
+    fn getpwuid(pw_uid: u32, buffer: &mut [i8; 16384]) -> Option<libc::passwd> {
         let mut pwentp = null_mut();
         #[cfg(any(
             target_os = "macos",
@@ -74,7 +74,11 @@ pub mod username {
                 libc::getpwuid_r(pw_uid, &mut pwent, buffer, 16384, &mut pwentp);
             }
 
-            pwent
+            if pwentp.is_null() {
+                None
+            } else {
+                Some(pwent)
+            }
         }
         #[cfg(target_os = "linux")]
         {
@@ -91,8 +95,11 @@ pub mod username {
             unsafe {
                 libc::getpwuid_r(pw_uid, &mut pwent, buffer.as_mut_ptr(), 16384, &mut pwentp);
             }
-
-            pwent
+            if pwentp.is_null() {
+                None
+            } else {
+                Some(pwent)
+            }
         }
     }
 
@@ -102,10 +109,13 @@ pub mod username {
 
         let string;
         unsafe {
-            string = ::std::ffi::CStr::from_ptr(pwent.pw_name)
-                .to_str()
-                .unwrap_or_else(|_| "")
-                .to_string();
+            string = match pwent {
+                None => uid.to_string(),
+                Some(p) => ::std::ffi::CStr::from_ptr(p.pw_name)
+                    .to_str()
+                    .unwrap_or_else(|_| "")
+                    .to_string()
+            }
         }
 
         string

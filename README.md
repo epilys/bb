@@ -7,7 +7,7 @@
 ```
 
 ## DESCRIPTION
-simple process viewer (for functionalities, see shortcuts below)
+simple process viewer (for functionalities, press `h` within `bb` or see shortcuts below)
 
 ![screenshot](screenshot.png) 
 
@@ -29,11 +29,16 @@ cargo install bb
 
 ## SHORTCUTS
 ```
+      'h'   Toggle help overlay
       'F'   Follow process and its children. Type the pid you want to follow
+      'L'   Highlight process. Type the pid you want to highlight
       'k'   Kill process under cursor
             Press Enter to confirm kill, or Esc to cancel
       'f'   (un)freeze process list updates
-      '/'   Filter process list
+      '/'   Search process list
+			'n'   Next search result
+			'N'   Previous search result
+      Space Filter process list
       't'   toggle tree view
       F1    toggles/activates username sorting
       F2    toggles/activates vm_rss sorting

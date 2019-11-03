@@ -1,6 +1,6 @@
 [package]
 name = "bb"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Manos Pitsidianakis <el13635@mail.ntua.gr>"]
 license = "GPL-3.0-or-later"
 readme = "README.md"

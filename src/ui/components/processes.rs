@@ -166,7 +166,6 @@ pub struct ProcessList {
     height: usize,
     dirty: bool,
     force_redraw: bool,
-    filter_term: Option<String>,
     maxima: ColumnWidthMaxima,
     /* stop updating data */
     freeze: bool,
@@ -175,53 +174,46 @@ pub struct ProcessList {
     processes_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
     sort: Sort,
-    mode: ProcessListMode,
+    mode: FunctionModes,
 }
 
 #[derive(Debug, PartialEq)]
-enum ProcessListMode {
-    Normal,
-    Follow(Pid),
-    Locate(Pid),
-    Search(String),
-    Kill(u16),
+enum Input {
+    Active,
+    Inactive,
 }
 
-impl ProcessListMode {
-    fn is_normal(&self) -> bool {
-        *self == Normal
-    }
-
-    fn is_follow(&self) -> bool {
-        match self {
-            Follow(_) => true,
-            _ => false,
-        }
-    }
-
-    fn is_locate(&self) -> bool {
-        match self {
-            Locate(_) => true,
-            _ => false,
-        }
-    }
-
-    fn is_search(&self) -> bool {
-        match self {
-            Search(_) => true,
-            _ => false,
-        }
-    }
-
-    fn is_kill(&self) -> bool {
-        match self {
-            Kill(_) => true,
-            _ => false,
-        }
+impl Default for Input {
+    fn default() -> Self {
+        Inactive
     }
 }
+use Input::*;
 
-use ProcessListMode::*;
+const FOLLOW_ACTIVE: u8 = 0x01;
+const LOCATE_ACTIVE: u8 = 0x02;
+const SEARCH_ACTIVE: u8 = 0x04;
+const KILL_ACTIVE: u8 = 0x08;
+const HELP_ACTIVE: u8 = 0x10;
+const FILTER_ACTIVE: u8 = 0x40;
+
+#[derive(Debug, PartialEq, Default)]
+struct FunctionModes {
+    follow: Pid,
+    locate: Pid,
+    search: (String, usize, usize, bool), /* (search term, current result y_offset, previous result offset, is cursor focused on results?) */
+    kill: u16,
+    filter: String,
+    active: u8,
+    input: Input,
+}
+
+impl FunctionModes {
+    #[inline(always)]
+    fn is_active(&self, mask: u8) -> bool {
+        (self.active & mask) > 0
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum State {
@@ -309,13 +301,12 @@ impl ProcessList {
             data,
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
-            filter_term: None,
             height: 0,
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
             draw_tree: false,
             draw_help: false,
-            mode: Normal,
+            mode: FunctionModes::default(),
             dirty: true,
             sort: Sort::CpuDesc,
             force_redraw: false,
@@ -323,9 +314,10 @@ impl ProcessList {
     }
 
     fn follow(&self) -> Option<Pid> {
-        match self.mode {
-            ProcessListMode::Follow(pid) => Some(pid),
-            _ => None,
+        if self.mode.is_active(FOLLOW_ACTIVE) {
+            Some(self.mode.follow)
+        } else {
+            None
         }
     }
 
@@ -344,13 +336,8 @@ impl ProcessList {
                 Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
                 Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
             });
-            if self.filter_term.is_some() {
-                processes.retain(|process| {
-                    process
-                        .cmd_line
-                        .0
-                        .contains(self.filter_term.as_ref().unwrap())
-                });
+            if self.mode.is_active(FILTER_ACTIVE) {
+                processes.retain(|process| process.cmd_line.0.contains(self.mode.filter.as_str()));
             }
             processes[cursor].i
         }
@@ -401,6 +388,7 @@ impl ProcessList {
         &mut self,
         grid: &mut CellBuffer,
         area: Area,
+        tick: bool,
         mut pages: usize,
         height: usize,
     ) {
@@ -413,17 +401,44 @@ impl ProcessList {
 
         self.cursor = std::cmp::min(self.height, self.cursor);
         let mut lines = Vec::with_capacity(2048);
-        let mut iter = self.data.tree.iter().peekable();
+        let tree = self
+            .data
+            .tree
+            .iter()
+            .filter(|(_, pid)| {
+                if self.mode.is_active(FILTER_ACTIVE) {
+                    self.processes[self.data.processes_index[pid]]
+                        .cmd_line
+                        .0
+                        .contains(self.mode.filter.as_str())
+                } else {
+                    true
+                }
+            })
+            .collect::<Vec<&_>>();
+        let mut iter = tree.iter().peekable();
 
         let mut stop_search = false;
+        let mut search_results = 0;
         while let Some((ind, pid)) = iter.next() {
             let p = &self.processes[self.data.processes_index[pid]];
-            if let Search(ref search) = self.mode {
-                if !stop_search && search.len() > 1 && p.cmd_line.0.contains(search) {
-                    let i = lines.len(); /* get index from lines to avoid making another counter */
-                    pages = i / height;
-                    self.cursor = i;
-                    stop_search = true;
+            if self.mode.is_active(SEARCH_ACTIVE) {
+                let (ref search, ref mut n, ref mut n_prev, is_cursor_focused) = self.mode.search;
+                if (*n != *n_prev || tick) && is_cursor_focused {
+                    if !stop_search && search.len() > 1 && p.cmd_line.0.contains(search) {
+                        if search_results == *n {
+                            let i = y_offset;
+                            pages = i / height;
+                            self.cursor = i;
+                            stop_search = true;
+                            *n_prev = *n;
+                        } else {
+                            search_results += 1;
+                        }
+                        if search_results < *n {
+                            *n = search_results;
+                        }
+                    }
                 }
             }
             let has_sibling: bool = child_counters
@@ -488,9 +503,7 @@ impl ProcessList {
             }
         }
 
-        for ((_, pid), s) in self
-            .data
-            .tree
+        for ((_, pid), s) in tree
             .iter()
             .zip(lines.iter())
             .skip(pages * height)
@@ -498,7 +511,8 @@ impl ProcessList {
         {
             let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
                 (Color::White, Color::Byte(235))
-            } else if let Locate(highlighted_pid) = self.mode {
+            } else if self.mode.is_active(LOCATE_ACTIVE) {
+                let highlighted_pid = self.mode.locate;
                 if highlighted_pid == *pid {
                     (Color::Red, Color::Yellow)
                 } else {
@@ -700,7 +714,13 @@ impl Component for ProcessList {
         let bottom_right = pos_dec(bottom_right!(area), (1, 1));
 
         /* Reserve first row for column headers */
-        let height = height!(area) - 2 - if self.mode.is_locate() { 2 } else { 0 };
+        let height = height!(area)
+            - 2
+            - if self.mode.is_active(LOCATE_ACTIVE) {
+                2
+            } else {
+                0
+            };
         let width = width!(area);
         let old_pages = (self.cursor) / height;
 
@@ -761,7 +781,8 @@ impl Component for ProcessList {
 
                 self.cursor = std::cmp::min(self.height.saturating_sub(1), self.cursor);
             }
-            if let Follow(ref pid) = self.mode {
+            if self.mode.is_active(FOLLOW_ACTIVE) {
+                let pid = self.mode.follow;
                 let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
                 write_string_to_grid(
                     &info,
@@ -779,7 +800,9 @@ impl Component for ProcessList {
                     false,
                 );
                 upper_left = pos_inc(upper_left, (0, 2));
-            } else if let Locate(ref pid) = self.mode {
+            }
+            if self.mode.is_active(LOCATE_ACTIVE) {
+                let pid = &self.mode.locate;
                 let info = format!("Highlighting PID == {pid}", pid = pid);
                 write_string_to_grid(
                     &info,
@@ -799,12 +822,13 @@ impl Component for ProcessList {
                 upper_left = pos_inc(upper_left, (0, 2));
             }
 
-            let cmd_header = if let Search(ref p) = self.mode {
+            let cmd_header = if self.mode.is_active(SEARCH_ACTIVE) {
+                let (ref p, _, _, _) = self.mode.search;
                 Some(format!("CMD_LINE (search: {})", p))
+            } else if self.mode.is_active(FILTER_ACTIVE) {
+                Some(format!("CMD_LINE (filter: {})", &self.mode.filter))
             } else {
-                self.filter_term
-                    .as_ref()
-                    .map(|filter_term| format!("CMD_LINE (filter: {})", filter_term))
+                None
             };
 
             /* Write column headers */
@@ -817,7 +841,7 @@ impl Component for ProcessList {
                     vm_rss = "VM_RSS",
                     cpu_percent = "  CPU%",
                     state = " ",
-                    cmd_line = if let Some(ref cmd_header) = cmd_header { cmd_header } else { "CMD_LINE"} ,
+                    cmd_line = if let Some(ref cmd_header) = cmd_header { &cmd_header } else { "CMD_LINE"} ,
                     max_pid = self.maxima.pid,
                     max_ppid = self.maxima.ppid,
                     max_username = self.maxima.username,
@@ -836,6 +860,10 @@ impl Component for ProcessList {
                 (pos_inc(upper_left, (0, 1)), bottom_right),
                 false,
             );
+            if self.mode.is_active(SEARCH_ACTIVE | FILTER_ACTIVE) && self.mode.input == Active {
+                grid[(x - 1, y)].set_fg(Color::White);
+                grid[(x - 1, y)].set_bg(Color::Black);
+            }
             change_colors(
                 grid,
                 ((x, y), set_y(bottom_right, y)),
@@ -859,7 +887,7 @@ impl Component for ProcessList {
                     x = _x;
                 }
 
-                if self.mode.is_search() {
+                if self.mode.is_active(SEARCH_ACTIVE) {
                     let (_x, _) = write_string_to_grid(
                         "  SEARCH  ",
                         grid,
@@ -870,7 +898,8 @@ impl Component for ProcessList {
                         false,
                     );
                     x = _x;
-                } else if self.mode.is_follow() {
+                }
+                if self.mode.is_active(FOLLOW_ACTIVE) {
                     let (_x, _) = write_string_to_grid(
                         "  FOLLOW  ",
                         grid,
@@ -881,7 +910,8 @@ impl Component for ProcessList {
                         false,
                     );
                     x = _x;
-                } else if self.mode.is_locate() {
+                }
+                if self.mode.is_active(LOCATE_ACTIVE) {
                     let (_x, _) = write_string_to_grid(
                         "  LOCATE  ",
                         grid,
@@ -892,7 +922,8 @@ impl Component for ProcessList {
                         false,
                     );
                     x = _x;
-                } else if self.mode.is_kill() {
+                }
+                if self.mode.is_active(KILL_ACTIVE) {
                     let (_x, _) = write_string_to_grid(
                         "  KILL  ",
                         grid,
@@ -905,7 +936,7 @@ impl Component for ProcessList {
                     x = _x;
                 }
 
-                if self.filter_term.is_some() {
+                if self.mode.is_active(FILTER_ACTIVE) {
                     write_string_to_grid(
                         "  FILTER  ",
                         grid,
@@ -920,7 +951,7 @@ impl Component for ProcessList {
             let mut y_offset = 0;
 
             if self.draw_tree {
-                self.draw_tree_list(grid, (upper_left, bottom_right), pages, height);
+                self.draw_tree_list(grid, (upper_left, bottom_right), tick, pages, height);
                 self.height = self.data.tree.len();
                 self.cursor = std::cmp::min(self.height, self.cursor);
             } else {
@@ -935,27 +966,37 @@ impl Component for ProcessList {
                     Sort::CmdLineAsc => a.cmd_line.0.cmp(&b.cmd_line.0),
                     Sort::CmdLineDesc => b.cmd_line.0.cmp(&a.cmd_line.0),
                 });
-                if self.filter_term.is_some() {
-                    processes.retain(|process| {
-                        process
-                            .cmd_line
-                            .0
-                            .contains(self.filter_term.as_ref().unwrap())
-                    });
+                if self.mode.is_active(FILTER_ACTIVE) {
+                    processes
+                        .retain(|process| process.cmd_line.0.contains(self.mode.filter.as_str()));
                 }
                 self.height = processes.len();
-                self.cursor = if let Search(ref search) = self.mode {
-                    let mut ret = self.cursor;
-                    if search.len() > 1 {
-                        for (i, p) in processes.iter().enumerate() {
-                            if p.cmd_line.0.contains(search) {
-                                pages = i / height;
-                                ret = i;
-                                break;
+
+                self.cursor = if self.mode.is_active(SEARCH_ACTIVE) && self.mode.search.3 {
+                    let (ref search, ref mut n, ref mut n_prev, _) = self.mode.search;
+                    if *n != *n_prev || tick {
+                        let mut ret = self.cursor;
+                        if search.len() > 1 {
+                            let mut ctr = 0;
+                            for (i, p) in processes.iter().enumerate() {
+                                if p.cmd_line.0.contains(search) {
+                                    if ctr == *n {
+                                        pages = i / height;
+                                        ret = i;
+                                        *n_prev = *n;
+                                        break;
+                                    }
+                                    ctr += 1;
+                                }
+                            }
+                            if ctr < *n {
+                                *n = ctr;
                             }
                         }
+                        ret
+                    } else {
+                        self.cursor
                     }
-                    ret
                 } else {
                     std::cmp::min(self.height, self.cursor)
                 };
@@ -963,7 +1004,8 @@ impl Component for ProcessList {
                 for p in processes.iter().skip(pages * height).take(height) {
                     let (fg_color, bg_color) = if pages * height + y_offset == self.cursor {
                         (Color::White, Color::Byte(235))
-                    } else if let Locate(highlighted_pid) = self.mode {
+                    } else if self.mode.is_active(LOCATE_ACTIVE) {
+                        let highlighted_pid = self.mode.locate;
                         if highlighted_pid == p.i {
                             (Color::Red, Color::Yellow)
                         } else {
@@ -1139,7 +1181,8 @@ impl Component for ProcessList {
                 }
             }
         } else if old_cursor != self.cursor {
-            if let Follow(ref pid) = self.mode {
+            if self.mode.is_active(FOLLOW_ACTIVE) {
+                let pid = self.mode.follow;
                 let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
                 let (_, y) = write_string_to_grid(
                     &info,
@@ -1165,7 +1208,8 @@ impl Component for ProcessList {
                 ));
 
                 upper_left = pos_inc(upper_left, (0, 2));
-            } else if let Locate(ref pid) = self.mode {
+            } else if self.mode.is_active(LOCATE_ACTIVE) {
+                let pid = self.mode.locate;
                 let info = format!("Highlighting PID == {pid}", pid = pid);
                 let (_, y) = write_string_to_grid(
                     &info,
@@ -1201,7 +1245,8 @@ impl Component for ProcessList {
             );
             let old_pid = self.get_pid_under_cursor(old_cursor);
             change_colors(grid, new_area, None, Some(Color::Byte(235)));
-            let bg_color = if let Locate(highlighted_pid) = self.mode {
+            let bg_color = if self.mode.is_active(LOCATE_ACTIVE) {
+                let highlighted_pid = self.mode.locate;
                 if highlighted_pid == old_pid {
                     Color::Yellow
                 } else {
@@ -1220,45 +1265,50 @@ impl Component for ProcessList {
             change_colors(grid, old_area, None, Some(bg_color));
             dirty_areas.push_back(old_area);
             dirty_areas.push_back(new_area);
-        } else if let Follow(ref pid) = self.mode {
-            let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
-            let (_, y) = write_string_to_grid(
-                &info,
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Bold,
-                (
-                    pos_inc(
-                        upper_left!(area),
-                        ((width / 2).saturating_sub(info.len() / 2), 1),
+        } else {
+            if self.mode.is_active(FOLLOW_ACTIVE) {
+                let pid = self.mode.follow;
+                let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
+                let (_, y) = write_string_to_grid(
+                    &info,
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
                     ),
-                    bottom_right!(area),
-                ),
-                false,
-            );
-            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
-        } else if let Locate(ref pid) = self.mode {
-            let info = format!("Highlighting PID == {pid}", pid = pid);
-            let (_, y) = write_string_to_grid(
-                &info,
-                grid,
-                Color::Default,
-                Color::Default,
-                Attr::Bold,
-                (
-                    pos_inc(
-                        upper_left!(area),
-                        ((width / 2).saturating_sub(info.len() / 2), 1),
+                    false,
+                );
+                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
+            } else if self.mode.is_active(LOCATE_ACTIVE) {
+                let pid = self.mode.locate;
+                let info = format!("Highlighting PID == {pid}", pid = pid);
+                let (_, y) = write_string_to_grid(
+                    &info,
+                    grid,
+                    Color::Default,
+                    Color::Default,
+                    Attr::Bold,
+                    (
+                        pos_inc(
+                            upper_left!(area),
+                            ((width / 2).saturating_sub(info.len() / 2), 1),
+                        ),
+                        bottom_right!(area),
                     ),
-                    bottom_right!(area),
-                ),
-                false,
-            );
-            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
+                    false,
+                );
+                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
+            }
         }
 
-        if let Kill(ref n) = self.mode {
+        if self.mode.is_active(KILL_ACTIVE) {
+            let n = self.mode.kill;
             let (cols, rows) = grid.size();
             let margin_left = (cols / 2).saturating_sub(20);
             let margin_top = (rows / 2).saturating_sub(12);
@@ -1291,12 +1341,12 @@ impl Component for ProcessList {
             );
             clear_area(grid, box_area);
             create_box(grid, box_area);
-            let signal_fmt = if *n == 0 {
+            let signal_fmt = if n == 0 {
                 format!("__")
-            } else if *n < 32 {
-                format!("{} [{}]", SIGNAL_LIST[*n as usize - 1].1, *n)
+            } else if n < 32 {
+                format!("{} [{}]", SIGNAL_LIST[n as usize - 1].1, n)
             } else {
-                format!("invalid [{}]", *n)
+                format!("invalid [{}]", n)
             };
             let pid = self.get_pid_under_cursor(self.cursor);
             write_string_to_grid(
@@ -1347,26 +1397,32 @@ impl Component for ProcessList {
         match event {
             UIEvent::Input(Key::Up) => {
                 self.page_movement = Some(PageMovement::Up);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::Down) => {
                 self.page_movement = Some(PageMovement::Down);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::Home) => {
                 self.page_movement = Some(PageMovement::Home);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::PageUp) => {
                 self.page_movement = Some(PageMovement::PageUp);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::PageDown) => {
                 self.page_movement = Some(PageMovement::PageDown);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::End) => {
                 self.page_movement = Some(PageMovement::End);
+                self.mode.search.3 = false;
                 self.dirty = true;
             }
             UIEvent::Input(Key::F(f)) => {
@@ -1387,155 +1443,261 @@ impl Component for ProcessList {
                 self.dirty = true;
             }
             UIEvent::Input(k)
-                if *k == map["toggle help overlay"]
-                    && !self.mode.is_search()
-                    && self.filter_term.is_none() =>
+                if *k == map["toggle help overlay"] && self.mode.input == Inactive =>
             {
                 self.draw_help = !self.draw_help;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(Key::Char(c)) if self.filter_term.is_some() && self.mode == Normal => {
-                if let Some(ref mut filter_term) = self.filter_term {
-                    if !c.is_ascii_control() {
-                        filter_term.push(*c);
-                        self.force_redraw = true;
-                        self.dirty = true;
+            UIEvent::Input(Key::Char(c))
+                if self.mode.is_active(SEARCH_ACTIVE) && self.mode.input == Active =>
+            {
+                let (ref mut p, ref mut n, ref mut n_prev, _) = self.mode.search;
+                if !c.is_ascii_control() {
+                    p.push(*c);
+                    *n_prev = *n + 1;
+                    self.force_redraw = true;
+                    self.dirty = true;
+                } else if *c == '\n' {
+                    if p.is_empty() {
+                        self.mode.active &= !SEARCH_ACTIVE;
+                        *n = 0;
+                        *n_prev = 1;
                     }
+                    self.mode.input = Input::Inactive;
+                    self.force_redraw = true;
+                    self.dirty = true;
                 }
             }
-            UIEvent::Input(k) if *k == map["filter"] && self.mode.is_normal() => {
-                self.filter_term = Some(String::new());
+            UIEvent::Input(Key::Char(c))
+                if self.mode.is_active(FILTER_ACTIVE) && self.mode.input == Active =>
+            {
+                let filter = &mut self.mode.filter;
+                if !c.is_ascii_control() {
+                    filter.push(*c);
+                    self.force_redraw = true;
+                    self.dirty = true;
+                } else if *c == '\n' {
+                    if filter.is_empty() {
+                        self.mode.active &= !FILTER_ACTIVE;
+                    }
+                    self.mode.input = Input::Inactive;
+                    self.force_redraw = true;
+                    self.dirty = true;
+                }
+            }
+            UIEvent::Input(k) if *k == map["filter"] && self.mode.input == Inactive => {
+                self.mode.input = Active;
+                self.mode.active |= FILTER_ACTIVE;
+                self.mode.active &= !SEARCH_ACTIVE;
+                self.mode.search.0.clear();
+                self.mode.search.1 = 0;
+                self.mode.search.2 = 1;
                 self.draw_tree = false;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["follow process group"] && !self.mode.is_follow() => {
-                let pid = self.get_pid_under_cursor(self.cursor);
-                self.mode = Follow(pid);
-                self.freeze = false;
+            UIEvent::Input(k)
+                if *k == map["follow process group"] && self.mode.input == Inactive =>
+            {
+                if self.mode.is_active(FOLLOW_ACTIVE) {
+                    self.mode.active &= !FOLLOW_ACTIVE;
+                    self.mode.follow = -1;
+                } else {
+                    let pid = self.get_pid_under_cursor(self.cursor);
+                    self.mode.active |= FOLLOW_ACTIVE;
+                    self.mode.active &= !FILTER_ACTIVE;
+                    self.mode.active &= !SEARCH_ACTIVE;
+                    self.mode.follow = pid;
+                    self.freeze = false;
+                }
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k)
-                if *k == map["freeze updates"]
-                    && (self.mode.is_normal()
-                        || self.mode.is_follow()
-                        || self.mode.is_locate()) =>
-            {
+            UIEvent::Input(k) if *k == map["freeze updates"] && (self.mode.input == Inactive) => {
                 self.freeze = !self.freeze;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["locate process by pid"] && self.mode.is_normal() => {
-                self.mode = Locate(0);
-                self.freeze = true;
+            UIEvent::Input(k)
+                if *k == map["locate process by pid"] && self.mode.input == Inactive =>
+            {
+                if self.mode.is_active(LOCATE_ACTIVE) {
+                    self.mode.active &= !LOCATE_ACTIVE;
+                } else {
+                    self.mode.active |= LOCATE_ACTIVE;
+                    self.mode.input = Active;
+                    self.freeze = true;
+                }
                 self.dirty = true;
                 self.force_redraw = true;
             }
             UIEvent::Input(k)
-                if *k == map["search process by name"]
-                    && self.mode.is_normal()
-                    && self.filter_term.is_none() =>
+                if *k == map["search process by name"] && self.mode.input == Inactive =>
             {
-                self.mode = Search(String::new());
+                self.mode.active |= SEARCH_ACTIVE;
+                self.mode.search.3 = true;
+                if self.mode.search.0.is_empty() {
+                    self.mode.search.1 = 0;
+                    self.mode.search.2 = 1;
+                }
+                self.mode.input = Active;
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["kill process"] => {
-                self.mode = Kill(0);
+            UIEvent::Input(k) if *k == map["kill process"] && !self.mode.is_active(KILL_ACTIVE) => {
+                self.mode.active |= KILL_ACTIVE;
+                self.mode.input = Active;
                 self.freeze = true;
                 self.dirty = true;
                 self.force_redraw = true;
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
                 /* layered cancelling */
-                if self.draw_help {
-                    self.draw_help = false;
-                } else if self.mode != Normal {
-                    self.mode = Normal;
-                } else if self.filter_term.is_some() {
-                    self.filter_term = None;
-                } else {
+                if self.mode.is_active(HELP_ACTIVE) {
+                    self.mode.active &= !HELP_ACTIVE;
+                } else if self.mode.is_active(KILL_ACTIVE) {
+                    self.mode.active &= !KILL_ACTIVE;
+                    self.mode.input = Inactive;
+                } else if self.mode.is_active(LOCATE_ACTIVE) {
+                    self.mode.active &= !LOCATE_ACTIVE;
+                    self.mode.input = Inactive;
+                } else if self.mode.is_active(FOLLOW_ACTIVE) {
+                    self.mode.active &= !FOLLOW_ACTIVE;
+                    self.mode.input = Inactive;
+                } else if self.mode.is_active(SEARCH_ACTIVE) {
+                    self.mode.active &= !SEARCH_ACTIVE;
+                    self.mode.search.0.clear();
+                    self.mode.search.1 = 0;
+                    self.mode.search.2 = 1;
+                    self.mode.input = Inactive;
+                } else if self.mode.is_active(FILTER_ACTIVE) {
+                    self.mode.active &= !FILTER_ACTIVE;
+                    self.mode.filter.clear();
+                    self.mode.input = Inactive;
+                } else if self.freeze {
                     self.freeze = false;
+                } else {
+                    return;
                 }
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k)
-                if *k == map["toggle tree view"]
-                    && !(self.filter_term.is_some() || self.mode.is_search()) =>
-            {
+            UIEvent::Input(k) if *k == map["toggle tree view"] && self.mode.input == Inactive => {
                 self.draw_tree = !self.draw_tree;
                 self.force_redraw = true;
                 self.dirty = true;
             }
             UIEvent::Input(Key::Char(f))
-                if !self.mode.is_normal() && !self.mode.is_search() && f.is_numeric() =>
+                if self.mode.is_active(KILL_ACTIVE | LOCATE_ACTIVE)
+                    && self.mode.input == Active
+                    && f.is_numeric() =>
             {
-                if let Kill(ref mut n) = self.mode {
+                if self.mode.is_active(KILL_ACTIVE) {
+                    let ref mut n = self.mode.kill;
                     if let Some(add) = (*n).checked_mul(10) {
                         *n = add
                             .checked_add(f.to_digit(10).unwrap() as u16)
                             .unwrap_or(*n);
                     }
-                } else if let Locate(ref mut p) = self.mode {
+                } else {
+                    let ref mut p = self.mode.locate;
                     if let Some(add) = (*p).checked_mul(10) {
                         *p = add
                             .checked_add(f.to_digit(10).unwrap() as i32)
                             .unwrap_or(*p);
                     }
-                    self.dirty = true;
                 }
+                self.dirty = true;
             }
-            UIEvent::Input(Key::Char(c)) if self.mode.is_search() => {
-                if let Search(ref mut p) = self.mode {
-                    if !c.is_ascii_control() {
-                        p.push(*c);
-                        self.force_redraw = true;
-                        self.dirty = true;
-                    }
-                }
-            }
-            UIEvent::Input(Key::Backspace) if self.mode != Normal => {
-                if let Kill(ref mut n) = self.mode {
+            UIEvent::Input(Key::Backspace) if self.mode.input == Active => {
+                if self.mode.is_active(KILL_ACTIVE) {
+                    let n = &mut self.mode.kill;
                     *n = *n / 10;
-                } else if let Locate(ref mut p) = self.mode {
-                    *p = *p / 10;
-                } else if let Search(ref mut p) = self.mode {
+                } else if self.mode.is_active(SEARCH_ACTIVE) {
+                    let (ref mut p, ref mut n, ref mut n_prev, _) = self.mode.search;
                     if p.is_empty() {
-                        self.mode = Normal;
+                        self.mode.active &= !SEARCH_ACTIVE;
+                        *n = 0;
+                        *n_prev = 1;
+                        self.mode.input = Inactive;
                     } else {
                         p.pop();
                     }
+                } else if self.mode.is_active(LOCATE_ACTIVE) {
+                    let p = &mut self.mode.locate;
+                    *p = *p / 10;
+                } else if self.mode.is_active(FILTER_ACTIVE) {
+                    let filter = &mut self.mode.filter;
+                    if filter.is_empty() {
+                        self.mode.input = Inactive;
+                        self.mode.active &= !FILTER_ACTIVE;
+                    } else {
+                        // TODO pop grapheme
+                        filter.pop();
+                    }
                 }
                 self.dirty = true;
                 self.force_redraw = true;
             }
-            UIEvent::Input(Key::Backspace) if self.filter_term.is_some() => {
-                let filter_term = self.filter_term.as_mut();
-                if filter_term.as_ref().unwrap().is_empty() {
-                    self.filter_term = None;
-                } else {
-                    // TODO pop grapheme
-                    filter_term.unwrap().pop();
-                }
-                self.dirty = true;
-                self.force_redraw = true;
-            }
-            UIEvent::Input(Key::Char('\n')) if self.mode != Normal => {
-                if let Kill(ref n) = self.mode {
-                    use nix::sys::signal::kill;
+            UIEvent::Input(Key::Char('\n'))
+                if self.mode.input == Active && self.mode.is_active(KILL_ACTIVE) =>
+            {
+                let ref n = self.mode.kill;
+                use nix::sys::signal::kill;
 
-                    kill(
-                        nix::unistd::Pid::from_raw(self.get_pid_under_cursor(self.cursor)),
-                        nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
-                    )
-                    .ok()
-                    .take();
-                    self.mode = Normal;
-                    self.dirty = true;
+                kill(
+                    nix::unistd::Pid::from_raw(self.get_pid_under_cursor(self.cursor)),
+                    nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
+                )
+                .ok()
+                .take();
+                self.mode.active &= !KILL_ACTIVE;
+                self.dirty = true;
+                self.force_redraw = true;
+                self.mode.input = Inactive;
+            }
+            UIEvent::Input(Key::Char('\n'))
+                if self.mode.input == Active && self.mode.is_active(LOCATE_ACTIVE) =>
+            {
+                self.dirty = true;
+                self.force_redraw = true;
+                self.mode.input = Inactive;
+            }
+            UIEvent::Input(Key::Char(c))
+                if self.mode.is_active(SEARCH_ACTIVE) && self.mode.input == Inactive =>
+            {
+                let (_, ref mut n, ref mut n_prev, ref mut is_cursor_focused) = self.mode.search;
+                if *c == 'n' {
+                    if *is_cursor_focused {
+                        *n_prev = *n;
+                        *n += 1;
+                    } else {
+                        /* regain focus */
+                        *n_prev = *n + 1;
+                        *is_cursor_focused = true;
+                    }
                     self.force_redraw = true;
+                    self.dirty = true;
+                } else if *c == 'N' {
+                    if *is_cursor_focused {
+                        *n_prev = *n;
+                        *n = (*n).saturating_sub(1);
+                    } else {
+                        /* regain focus */
+                        *n_prev = *n + 1;
+                        *is_cursor_focused = true;
+                    }
+                    self.force_redraw = true;
+                    self.dirty = true;
+                } else if *c == '\n' {
+                    self.mode.active &= !SEARCH_ACTIVE;
+                    self.mode.search.0.clear();
+                    self.mode.search.1 = 0;
+                    self.mode.search.2 = 1;
+                    self.mode.input = Inactive;
+                    self.force_redraw = true;
+                    self.dirty = true;
                 }
             }
             _ => {}

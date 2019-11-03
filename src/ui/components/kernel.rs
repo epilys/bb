@@ -587,7 +587,7 @@ fn get_cpu_times(
                     Color::Default
                 } else if percent < 0.50 {
                     Color::Byte(70)
-                } else if $tag != "idle%  " {
+                } else if $tag != "idle   " {
                     Color::Red
                 } else {
                     Color::Default
@@ -597,15 +597,15 @@ fn get_cpu_times(
     };
 
     /* user % */
-    val!("user%  ", user_time);
+    val!("user   ", user_time);
     /* system % */
-    val!("system%", system_time);
+    val!("system ", system_time);
     /* nice % */
-    val!("nice%  ", nice_time);
+    val!("nice   ", nice_time);
     /* idle % */
-    val!("idle%  ", idle_time);
+    val!("idle   ", idle_time);
     /* iowait % */
-    val!("iowait%", iowait_time);
+    val!("iowait ", iowait_time);
 
     ret
 }

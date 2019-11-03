@@ -86,7 +86,7 @@ impl ColumnWidthMaxima {
             pid: "PID".len(),
             ppid: "PPID".len(),
             vm_rss: "VM_RSS".len(),
-            cpu_percent: " CPU%".len(),
+            cpu_percent: "  CPU%".len(),
             state: 1,
             username: "USER".len(),
         }

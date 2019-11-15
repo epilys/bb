@@ -468,6 +468,7 @@ impl ProcessList {
 
             for i in 0..*ind {
                 if branches.len() > i && branches[i] {
+                    s.push(' ');
                     s.push('│');
                 } else {
                     s.push(' ');
@@ -479,19 +480,25 @@ impl ProcessList {
             if *ind > 0 || (has_sibling || is_first) {
                 if p.is_thread {
                     if has_sibling && is_first {
+                        s.push(' ');
                         s.push('╞');
                     } else if has_sibling {
+                        s.push(' ');
                         s.push('╞');
                     } else {
+                        s.push(' ');
                         s.push('╘');
                     }
                     s.push('═');
                 } else {
                     if has_sibling && is_first {
+                        s.push(' ');
                         s.push('├');
                     } else if has_sibling {
+                        s.push(' ');
                         s.push('├');
                     } else {
+                        s.push(' ');
                         s.push('└');
                     }
                     s.push('─');

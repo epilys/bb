@@ -58,7 +58,7 @@ pub trait Component: Display + Debug + Send {
         dirty_areas: &mut VecDeque<Area>,
         tick: bool,
     );
-    fn process_event(&mut self, event: &mut UIEvent);
+    fn process_event(&mut self, event: &mut UIEvent, ui_mode: &mut UIMode);
     fn is_dirty(&self) -> bool {
         true
     }

@@ -37,6 +37,12 @@ use termion::raw::IntoRawMode;
 use termion::screen::AlternateScreen;
 use termion::{clear, cursor, style};
 
+#[derive(PartialEq)]
+pub enum UIMode {
+    Normal,
+    Input,
+}
+
 type StateStdout = termion::screen::AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>;
 
 struct InputHandler {
@@ -79,6 +85,7 @@ pub struct State {
     sender: Sender<ThreadEvent>,
     receiver: Receiver<ThreadEvent>,
     input: InputHandler,
+    pub mode: UIMode,
 }
 
 impl Drop for State {
@@ -138,6 +145,7 @@ impl State {
                 rx: input_receiver,
                 tx: input_sender,
             },
+            mode: UIMode::Normal,
         };
 
         write!(
@@ -335,7 +343,7 @@ impl State {
     pub fn rcv_event(&mut self, mut event: UIEvent) {
         /* inform each component */
         for i in 0..self.components.len() {
-            self.components[i].process_event(&mut event);
+            self.components[i].process_event(&mut event, &mut self.mode);
         }
     }
 

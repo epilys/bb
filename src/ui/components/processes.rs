@@ -186,6 +186,18 @@ enum Input {
     Inactive,
 }
 
+impl Input {
+    fn set_inactive(&mut self, ui_mode: &mut UIMode) {
+        *self = Inactive;
+        *ui_mode = UIMode::Normal;
+    }
+
+    fn set_active(&mut self, ui_mode: &mut UIMode) {
+        *self = Active;
+        *ui_mode = UIMode::Input;
+    }
+}
+
 impl Default for Input {
     fn default() -> Self {
         Inactive
@@ -1415,7 +1427,7 @@ impl Component for ProcessList {
         self.dirty = false;
     }
 
-    fn process_event(&mut self, event: &mut UIEvent) {
+    fn process_event(&mut self, event: &mut UIEvent, ui_mode: &mut UIMode) {
         let map = &self.get_shortcuts()[""];
         match event {
             UIEvent::Input(Key::Up) => {
@@ -1487,7 +1499,7 @@ impl Component for ProcessList {
                         *n = 0;
                         *n_prev = 1;
                     }
-                    self.mode.input = Input::Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                     self.force_redraw = true;
                     self.dirty = true;
                 }
@@ -1504,13 +1516,13 @@ impl Component for ProcessList {
                     if filter.is_empty() {
                         self.mode.active &= !FILTER_ACTIVE;
                     }
-                    self.mode.input = Input::Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                     self.force_redraw = true;
                     self.dirty = true;
                 }
             }
             UIEvent::Input(k) if *k == map["filter"] && self.mode.input == Inactive => {
-                self.mode.input = Active;
+                self.mode.input.set_active(ui_mode);
                 self.mode.active |= FILTER_ACTIVE;
                 self.mode.active &= !SEARCH_ACTIVE;
                 self.mode.search.0.clear();
@@ -1549,7 +1561,7 @@ impl Component for ProcessList {
                     self.mode.active &= !LOCATE_ACTIVE;
                 } else {
                     self.mode.active |= LOCATE_ACTIVE;
-                    self.mode.input = Active;
+                    self.mode.input.set_active(ui_mode);
                     self.freeze = true;
                 }
                 self.dirty = true;
@@ -1564,13 +1576,13 @@ impl Component for ProcessList {
                     self.mode.search.1 = 0;
                     self.mode.search.2 = 1;
                 }
-                self.mode.input = Active;
+                self.mode.input.set_active(ui_mode);
                 self.force_redraw = true;
                 self.dirty = true;
             }
             UIEvent::Input(k) if *k == map["kill process"] && !self.mode.is_active(KILL_ACTIVE) => {
                 self.mode.active |= KILL_ACTIVE;
-                self.mode.input = Active;
+                self.mode.input.set_active(ui_mode);
                 self.freeze = true;
                 self.dirty = true;
                 self.force_redraw = true;
@@ -1581,23 +1593,23 @@ impl Component for ProcessList {
                     self.mode.active &= !HELP_ACTIVE;
                 } else if self.mode.is_active(KILL_ACTIVE) {
                     self.mode.active &= !KILL_ACTIVE;
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                 } else if self.mode.is_active(LOCATE_ACTIVE) {
                     self.mode.active &= !LOCATE_ACTIVE;
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                 } else if self.mode.is_active(FOLLOW_ACTIVE) {
                     self.mode.active &= !FOLLOW_ACTIVE;
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                 } else if self.mode.is_active(SEARCH_ACTIVE) {
                     self.mode.active &= !SEARCH_ACTIVE;
                     self.mode.search.0.clear();
                     self.mode.search.1 = 0;
                     self.mode.search.2 = 1;
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                 } else if self.mode.is_active(FILTER_ACTIVE) {
                     self.mode.active &= !FILTER_ACTIVE;
                     self.mode.filter.clear();
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                 } else if self.freeze {
                     self.freeze = false;
                 } else {
@@ -1643,7 +1655,7 @@ impl Component for ProcessList {
                         self.mode.active &= !SEARCH_ACTIVE;
                         *n = 0;
                         *n_prev = 1;
-                        self.mode.input = Inactive;
+                        self.mode.input.set_inactive(ui_mode);
                     } else {
                         p.pop();
                     }
@@ -1653,7 +1665,7 @@ impl Component for ProcessList {
                 } else if self.mode.is_active(FILTER_ACTIVE) {
                     let filter = &mut self.mode.filter;
                     if filter.is_empty() {
-                        self.mode.input = Inactive;
+                        self.mode.input.set_inactive(ui_mode);
                         self.mode.active &= !FILTER_ACTIVE;
                     } else {
                         // TODO pop grapheme
@@ -1678,14 +1690,14 @@ impl Component for ProcessList {
                 self.mode.active &= !KILL_ACTIVE;
                 self.dirty = true;
                 self.force_redraw = true;
-                self.mode.input = Inactive;
+                self.mode.input.set_inactive(ui_mode);
             }
             UIEvent::Input(Key::Char('\n'))
                 if self.mode.input == Active && self.mode.is_active(LOCATE_ACTIVE) =>
             {
                 self.dirty = true;
                 self.force_redraw = true;
-                self.mode.input = Inactive;
+                self.mode.input.set_inactive(ui_mode);
             }
             UIEvent::Input(Key::Char(c))
                 if self.mode.is_active(SEARCH_ACTIVE) && self.mode.input == Inactive =>
@@ -1718,7 +1730,7 @@ impl Component for ProcessList {
                     self.mode.search.0.clear();
                     self.mode.search.1 = 0;
                     self.mode.search.2 = 1;
-                    self.mode.input = Inactive;
+                    self.mode.input.set_inactive(ui_mode);
                     self.force_redraw = true;
                     self.dirty = true;
                 }

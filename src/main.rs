@@ -111,7 +111,7 @@ fn main() -> Result<(), Error> {
                     },
                     ThreadEvent::Input(k) => {
                         match k {
-                            Key::Char('q') | Key::Char('Q') => {
+                            Key::Char('q') | Key::Char('Q') if state.mode == UIMode::Normal => {
                                 drop(state);
                                 break 'main;
                             },

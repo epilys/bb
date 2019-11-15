@@ -237,9 +237,9 @@ impl Component for Window {
         );
     }
 
-    fn process_event(&mut self, event: &mut UIEvent) {
-        self.top_bars.process_event(event);
-        self.list.process_event(event);
+    fn process_event(&mut self, event: &mut UIEvent, ui_mode: &mut UIMode) {
+        self.top_bars.process_event(event, ui_mode);
+        self.list.process_event(event, ui_mode);
     }
 
     fn is_dirty(&self) -> bool {

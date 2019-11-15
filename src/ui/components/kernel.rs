@@ -503,7 +503,7 @@ impl Component for KernelMetrics {
         }
     }
 
-    fn process_event(&mut self, event: &mut UIEvent) {
+    fn process_event(&mut self, event: &mut UIEvent, _ui_mode: &mut UIMode) {
         match event {
             UIEvent::Resize => {
                 self.dirty = true;

@@ -29,6 +29,7 @@ use std::str::FromStr;
 pub struct ProcessData {
     cpu_stat: Stat,
     processes_times: HashMap<Pid, usize>,
+    threads_times: HashMap<Pid, usize>,
     parents: HashMap<Pid, Vec<Pid>>,
     processes_index: HashMap<Pid, usize>,
     tree_index: HashMap<Pid, usize>,
@@ -154,6 +155,7 @@ pub struct ProcessDisplay {
     pub cmd_line: CmdLineString,
     pub username: UserString,
     pub rtime: usize,
+    pub is_thread: bool,
 }
 
 /* process list components */
@@ -172,6 +174,7 @@ pub struct ProcessList {
     draw_tree: bool,
     draw_help: bool,
     processes_times: HashMap<Pid, usize>,
+    threads_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
     sort: Sort,
     mode: FunctionModes,
@@ -289,6 +292,7 @@ impl ProcessList {
         let data = ProcessData {
             cpu_stat: get_stat(&mut 0).remove(0),
             processes_times: Default::default(),
+            threads_times: Default::default(),
             processes_index: Default::default(),
             tree_index: Default::default(),
             parents: Default::default(),
@@ -301,6 +305,7 @@ impl ProcessList {
             data,
             processes: Vec::with_capacity(1024),
             processes_times: Default::default(),
+            threads_times: Default::default(),
             height: 0,
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
@@ -472,14 +477,25 @@ impl ProcessList {
             }
 
             if *ind > 0 || (has_sibling || is_first) {
-                if has_sibling && is_first {
-                    s.push('├');
-                } else if has_sibling {
-                    s.push('├');
+                if p.is_thread {
+                    if has_sibling && is_first {
+                        s.push('╞');
+                    } else if has_sibling {
+                        s.push('╞');
+                    } else {
+                        s.push('╘');
+                    }
+                    s.push('═');
                 } else {
-                    s.push('└');
+                    if has_sibling && is_first {
+                        s.push('├');
+                    } else if has_sibling {
+                        s.push('├');
+                    } else {
+                        s.push('└');
+                    }
+                    s.push('─');
                 }
-                s.push('─');
                 s.push('>');
             }
 
@@ -1774,6 +1790,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
         ref mut tree_index,
         ref mut tree,
         ref mut processes_times,
+        ref mut threads_times,
         cpu_stat: ref mut data_cpu_stat,
     } = data;
 
@@ -1793,7 +1810,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             continue;
         }
 
-        let process = if let Ok(p) = get_pid_info(dir.path()) {
+        let process = if let Ok(p) = get_pid_info(dir.path(), false) {
             p
         } else {
             continue;
@@ -1822,6 +1839,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             state: process.state,
             cmd_line: CmdLineString(process.cmd_line),
             username: UserString(crate::ui::username(process.uid)),
+            is_thread: false,
         };
 
         processes_times.insert(process.pid, process_display.rtime);
@@ -1829,6 +1847,45 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
 
         processes_index.insert(process.pid, processes.len());
         processes.push(process_display);
+
+        for t in std::fs::read_dir(dir.path().join("task")).unwrap() {
+            let path = t.unwrap().path();
+            let thread = if let Ok(p) = get_pid_info(path, true) {
+                if p.pid == process.pid {
+                    continue;
+                }
+                p
+            } else {
+                continue;
+            };
+
+            let process_display = ProcessDisplay {
+                i: thread.pid,
+                p: process.pid,
+                pid: PidString(thread.pid.to_string()),
+                ppid: PpidString(thread.ppid.to_string()),
+                vm_rss: VmRssString(Bytes(thread.vm_rss * 1024).as_convenient_string()),
+                vm_rss_value: thread.vm_rss * 1024,
+                cpu_percent: ((multiplier
+                    * (thread.rtime
+                        - threads_times
+                            .get(&thread.pid)
+                            .map(|v| *v)
+                            .unwrap_or(thread.rtime)) as f64)
+                    / divisor) as usize,
+                rtime: thread.rtime,
+                state: thread.state,
+                cmd_line: CmdLineString(thread.cmd_line),
+                username: UserString(crate::ui::username(thread.uid)),
+                is_thread: true,
+            };
+
+            threads_times.insert(thread.pid, process_display.rtime);
+            parents.entry(process.pid).or_default().push(thread.pid);
+
+            processes_index.insert(thread.pid, processes.len());
+            processes.push(process_display);
+        }
     }
     *data_cpu_stat = cpu_stat;
     let mut keep_list = HashSet::new();
@@ -1893,7 +1950,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
 
 /* Might return Error if process has disappeared
  * during the function's run */
-fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
+fn get_pid_info(mut path: PathBuf, thread: bool) -> Result<Process, std::io::Error> {
     /* proc file structure can be found in man 5 proc.*/
     path.push("status");
     let mut file: File = File::open(&path)?;
@@ -1978,7 +2035,11 @@ fn get_pid_info(mut path: PathBuf) -> Result<Process, std::io::Error> {
     }
 
     path.pop();
-    path.push("cmdline");
+    if thread {
+        path.push("comm");
+    } else {
+        path.push("cmdline");
+    }
     let mut file: File = File::open(&path)?;
     res.clear();
     file.read_to_string(&mut res)?;

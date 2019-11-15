@@ -35,7 +35,7 @@ use std::io::Write;
 
 use termion::raw::IntoRawMode;
 use termion::screen::AlternateScreen;
-use termion::{clear, cursor, style};
+use termion::{clear, cursor};
 
 #[derive(PartialEq)]
 pub enum UIMode {
@@ -91,17 +91,7 @@ pub struct State {
 impl Drop for State {
     fn drop(&mut self) {
         // When done, restore the defaults to avoid messing with the terminal.
-        write!(
-            self.stdout(),
-            "{}{}{}{}{}",
-            clear::All,
-            style::Reset,
-            cursor::Goto(1, 1),
-            cursor::Show,
-            BracketModeEnd,
-        )
-        .unwrap();
-        self.flush();
+        self.switch_to_main_screen();
     }
 }
 
@@ -167,9 +157,10 @@ impl State {
     pub fn switch_to_main_screen(&mut self) {
         write!(
             self.stdout(),
-            "{}{}",
+            "{}{}{}",
             termion::screen::ToMainScreen,
-            cursor::Show
+            cursor::Show,
+            BracketModeEnd,
         )
         .unwrap();
         self.flush();
@@ -183,11 +174,12 @@ impl State {
 
         write!(
             self.stdout(),
-            "{}{}{}{}",
+            "{}{}{}{}{}",
             termion::screen::ToAlternateScreen,
             cursor::Hide,
             clear::All,
-            cursor::Goto(1, 1)
+            cursor::Goto(1, 1),
+            BracketModeStart,
         )
         .unwrap();
         self.flush();

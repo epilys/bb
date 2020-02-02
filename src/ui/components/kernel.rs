@@ -163,7 +163,10 @@ impl KernelMetrics {
             let iowait_length = cpu_stat
                 .iowait_time
                 .saturating_sub(self.cpu_stat[i].iowait_time);
-            let bar_length: usize = (((busy_length + iowait_length) as f64
+            let bar_length: usize = ((cpu_stat
+                .busy_time()
+                .saturating_sub(self.cpu_stat[i].busy_time())
+                as f64
                 / (cpu_stat
                     .total_time()
                     .saturating_sub(self.cpu_stat[i].total_time())) as f64)

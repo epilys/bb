@@ -82,15 +82,30 @@ pub struct Stat {
 }
 
 impl Stat {
+    #[inline(always)]
     pub fn total_time(&self) -> usize {
-        (self.user_time - self.guest)
+        self.user_time
             + self.system_time
             + self.irq
             + self.soft_irq
-            + (self.nice_time - self.guest_nice)
+            + self.nice_time
             + self.idle_time
             + self.iowait_time
-            + (self.guest + self.guest_nice)
+            + self.guest
+            + self.guest_nice
+            + self.steal
+    }
+
+    #[inline(always)]
+    pub fn busy_time(&self) -> usize {
+        self.user_time
+            + self.system_time
+            + self.irq
+            + self.soft_irq
+            + self.nice_time
+            + self.iowait_time
+            + self.guest
+            + self.guest_nice
             + self.steal
     }
 }

@@ -17,14 +17,6 @@
  * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//!
-//!  This crate contains the frontend stuff of the application. The application entry way on
-//!  `src/bin.rs` creates an event loop and passes input to the `ui` module.
-//!
-//! The mail handling stuff is done in the `bb` crate which includes all backend needs. The
-//! split is done to theoretically be able to create different frontends with the same innards.
-//!
-
 extern crate crossbeam;
 extern crate nix;
 extern crate signal_hook;
@@ -36,8 +28,101 @@ use libc::c_int;
 use std::io::Error;
 use std::time::Duration;
 
-mod ui;
-use ui::*;
+//#[allow(dead_code)]
+mod text_processing;
+pub use crate::text_processing::*;
+#[macro_use]
+mod types;
+pub use crate::types::*;
+
+#[macro_use]
+mod terminal;
+pub use crate::terminal::*;
+
+pub mod state;
+pub use crate::state::*;
+
+pub mod components;
+pub use crate::components::*;
+pub use crate::username::*;
+pub mod username {
+    use libc;
+    use std::ptr::null_mut;
+    /* taken from whoami-0.1.1 */
+    fn getpwuid(pw_uid: u32, buffer: &mut [i8; 16384]) -> Option<libc::passwd> {
+        let mut pwentp = null_mut();
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        {
+            let mut pwent = libc::passwd {
+                pw_name: null_mut(),
+                pw_passwd: null_mut(),
+                pw_uid,
+                pw_gid: 0,
+                pw_change: 0,
+                pw_class: null_mut(),
+                pw_gecos: null_mut(),
+                pw_dir: null_mut(),
+                pw_shell: null_mut(),
+                pw_expire: 0,
+            };
+            unsafe {
+                libc::getpwuid_r(pw_uid, &mut pwent, buffer, 16384, &mut pwentp);
+            }
+
+            if pwentp.is_null() {
+                None
+            } else {
+                Some(pwent)
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let mut pwent = libc::passwd {
+                pw_name: null_mut(),
+                pw_passwd: null_mut(),
+                pw_uid,
+                pw_gid: 0,
+                pw_gecos: null_mut(),
+                pw_dir: null_mut(),
+                pw_shell: null_mut(),
+            };
+
+            unsafe {
+                libc::getpwuid_r(pw_uid, &mut pwent, buffer.as_mut_ptr(), 16384, &mut pwentp);
+            }
+            if pwentp.is_null() {
+                None
+            } else {
+                Some(pwent)
+            }
+        }
+    }
+
+    pub fn username(uid: u32) -> String {
+        let mut buffer = [0i8; 16384]; // from the man page
+        let pwent = getpwuid(uid, &mut buffer);
+
+        let string;
+        unsafe {
+            string = match pwent {
+                None => uid.to_string(),
+                Some(p) => ::std::ffi::CStr::from_ptr(p.pw_name)
+                    .to_str()
+                    .unwrap_or_else(|_| "")
+                    .to_string(),
+            }
+        }
+
+        string
+    }
+}
 
 fn notify(signals: &[c_int]) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
     let (s, r) = bounded(100);
@@ -65,19 +150,19 @@ fn main() -> Result<(), Error> {
     let signal_recvr = notify(signals)?;
 
     /* Create the application State */
-    let mut state = State::new();
+    let mut state = UIState::new();
 
     let receiver = state.receiver();
     let window = Box::new(Window::new(
-        Box::new(ui::components::KernelMetrics::new()),
-        Box::new(ui::components::ProcessList::new()),
+        Box::new(components::KernelMetrics::new()),
+        Box::new(components::ProcessList::new()),
     ));
 
     state.register_component(window);
     state.render();
     state.redraw(true);
 
-    /* Keep track of the input mode. See ui::UIMode for details */
+    /* Keep track of the input mode. See UIMode for details */
     'main: loop {
         /* Poll on all channels. Currently we have the input channel for stdin, watching events and the signal watcher. */
         select! {

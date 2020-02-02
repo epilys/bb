@@ -389,7 +389,7 @@ impl ProcessList {
                     pos_inc(upper_left!(box_area), (2, 4 + y)),
                     bottom_right!(box_area),
                 ),
-                false,
+                None,
             );
             y += 1;
         }
@@ -582,8 +582,7 @@ impl ProcessList {
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            false,
-                        );
+                            None,);
                     if p.state == State::Running {
                         grid[pos_inc(
                             upper_left,
@@ -610,7 +609,7 @@ impl ProcessList {
                         bg_color,
                         Attr::Default,
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                        false,
+                        None,
                     );
                     let (x, _) = write_string_to_grid(
                         bin,
@@ -623,7 +622,7 @@ impl ProcessList {
                         bg_color,
                         Attr::Default,
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                        false,
+                        None,
                     );
                     write_string_to_grid(
                         rest,
@@ -632,7 +631,7 @@ impl ProcessList {
                         bg_color,
                         Attr::Default,
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                        false,
+                        None,
                     );
                     change_colors(
                         grid,
@@ -667,8 +666,7 @@ impl ProcessList {
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            false,
-                        );
+                            None,);
                     if p.state == State::Running {
                         grid[pos_inc(
                             upper_left,
@@ -700,7 +698,7 @@ impl ProcessList {
                         bg_color,
                         Attr::Default,
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                        false,
+                        None,
                     );
                     write_string_to_grid(
                         rest,
@@ -709,7 +707,7 @@ impl ProcessList {
                         bg_color,
                         Attr::Default,
                         (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                        false,
+                        None,
                     );
                     change_colors(
                         grid,
@@ -832,7 +830,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 upper_left = pos_inc(upper_left, (0, 2));
             }
@@ -852,7 +850,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 upper_left = pos_inc(upper_left, (0, 2));
             }
@@ -893,8 +891,7 @@ impl Component for ProcessList {
                 Color::White,
                 Attr::Default,
                 (pos_inc(upper_left, (0, 1)), bottom_right),
-                false,
-            );
+                None,);
             if self.mode.is_active(SEARCH_ACTIVE | FILTER_ACTIVE) && self.mode.input == Active {
                 grid[(x - 1, y)].set_fg(Color::White);
                 grid[(x - 1, y)].set_bg(Color::Black);
@@ -917,7 +914,7 @@ impl Component for ProcessList {
                         Color::Byte(26), // DodgerBlue3
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                     x = _x;
                 }
@@ -930,7 +927,7 @@ impl Component for ProcessList {
                         Color::Byte(88), // DarkRed
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                     x = _x;
                 }
@@ -942,7 +939,7 @@ impl Component for ProcessList {
                         Color::Byte(172), // Orange3
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                     x = _x;
                 }
@@ -954,7 +951,7 @@ impl Component for ProcessList {
                         Color::Green,
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                     x = _x;
                 }
@@ -966,7 +963,7 @@ impl Component for ProcessList {
                         Color::Byte(8), // Grey
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                     x = _x;
                 }
@@ -979,7 +976,7 @@ impl Component for ProcessList {
                         Color::Byte(13), // Fuschia
                         Attr::Bold,
                         ((x, y), pos_inc(bottom_right, (0, 1))),
-                        false,
+                        None,
                     );
                 }
             }
@@ -1073,8 +1070,7 @@ impl Component for ProcessList {
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            false,
-                        );
+                            None,);
                             if p.state == State::Running {
                                 grid[pos_inc(
                                     upper_left,
@@ -1101,7 +1097,7 @@ impl Component for ProcessList {
                                 bg_color,
                                 Attr::Default,
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                                false,
+                                None,
                             );
                             let (x, _) = write_string_to_grid(
                                 bin,
@@ -1114,7 +1110,7 @@ impl Component for ProcessList {
                                 bg_color,
                                 Attr::Default,
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                                false,
+                                None,
                             );
                             write_string_to_grid(
                                 rest,
@@ -1123,7 +1119,7 @@ impl Component for ProcessList {
                                 bg_color,
                                 Attr::Default,
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                                false,
+                                None,
                             );
                             change_colors(
                                 grid,
@@ -1157,8 +1153,7 @@ impl Component for ProcessList {
                             bg_color,
                             Attr::Default,
                             (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            false,
-                        );
+                            None,);
                             if p.state == State::Running {
                                 grid[pos_inc(
                                     upper_left,
@@ -1190,7 +1185,7 @@ impl Component for ProcessList {
                                 bg_color,
                                 Attr::Default,
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                                false,
+                                None,
                             );
                             write_string_to_grid(
                                 rest,
@@ -1199,7 +1194,7 @@ impl Component for ProcessList {
                                 bg_color,
                                 Attr::Default,
                                 (pos_inc(upper_left, (x - 1, y_offset + 2)), bottom_right),
-                                false,
+                                None,
                             );
                             change_colors(
                                 grid,
@@ -1232,7 +1227,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 dirty_areas.push_back((
                     pos_inc(
@@ -1259,7 +1254,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 dirty_areas.push_back((
                     pos_inc(
@@ -1317,7 +1312,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
             } else if self.mode.is_active(LOCATE_ACTIVE) {
@@ -1336,7 +1331,7 @@ impl Component for ProcessList {
                         ),
                         bottom_right!(area),
                     ),
-                    false,
+                    None,
                 );
                 dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
             }
@@ -1364,7 +1359,7 @@ impl Component for ProcessList {
                         Color::Default,
                         Attr::Default,
                         (pos_inc(upper_left!(box_area), (x, 1 + y)), bottom_right),
-                        false,
+                        None,
                     );
                     y += 1;
                 }
@@ -1404,7 +1399,7 @@ impl Component for ProcessList {
                     pos_inc(upper_left!(box_area), (1, 1)),
                     bottom_right!(box_area),
                 ),
-                false,
+                None,
             );
             write_string_to_grid(
                 &format!("send {signal}", signal = signal_fmt,),
@@ -1416,7 +1411,7 @@ impl Component for ProcessList {
                     pos_inc(upper_left!(box_area), (1, 2)),
                     bottom_right!(box_area),
                 ),
-                false,
+                None,
             );
         }
 
@@ -1857,7 +1852,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             rtime: process.rtime,
             state: process.state,
             cmd_line: CmdLineString(process.cmd_line),
-            username: UserString(crate::ui::username(process.uid)),
+            username: UserString(crate::username(process.uid)),
             is_thread: false,
         };
 
@@ -1895,7 +1890,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
                 rtime: thread.rtime,
                 state: thread.state,
                 cmd_line: CmdLineString(thread.cmd_line),
-                username: UserString(crate::ui::username(thread.uid)),
+                username: UserString(crate::username(thread.uid)),
                 is_thread: true,
             };
 

@@ -54,29 +54,7 @@ pub fn pos_dec(p: Pos, dec: (usize, usize)) -> Pos {
     (p.0.saturating_sub(dec.0), p.1.saturating_sub(dec.1))
 }
 
-/// An `Area` consists of two points: the upper left and bottom right corners.
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let new_area = ((0, 0), (1, 1));
-/// # }
-/// ```
 pub type Area = (Pos, Pos);
-
-/// Get an area's height
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let new_area = ((0, 0), (1, 1));
-/// assert_eq!(height!(new_area), 1);
-/// # }
-/// ```
 #[macro_export]
 macro_rules! height {
     ($a:expr) => {
@@ -84,17 +62,6 @@ macro_rules! height {
     };
 }
 
-/// Get an area's width
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let new_area = ((0, 0), (1, 1));
-/// assert_eq!(width!(new_area), 1);
-/// # }
-/// ```
 #[macro_export]
 macro_rules! width {
     ($a:expr) => {
@@ -102,17 +69,6 @@ macro_rules! width {
     };
 }
 
-/// Get the upper left Position of an area
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let new_area = ((0, 0), (1, 1));
-/// assert_eq!(upper_left!(new_area), (0, 0));
-/// # }
-/// ```
 #[macro_export]
 macro_rules! upper_left {
     ($a:expr) => {
@@ -120,17 +76,6 @@ macro_rules! upper_left {
     };
 }
 
-/// Get the bottom right Position of an area
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let new_area = ((0, 0), (1, 1));
-/// assert_eq!(bottom_right!(new_area), (1, 1));
-/// # }
-/// ```
 #[macro_export]
 macro_rules! bottom_right {
     ($a:expr) => {
@@ -138,20 +83,6 @@ macro_rules! bottom_right {
     };
 }
 
-/// Check if area is valid.
-///
-/// Example:
-/// ```
-/// # #[macro_use] extern crate ui; fn main() {
-/// use ui::*;
-///
-/// let valid_area = ((0, 0), (1, 1));
-/// assert!(is_valid_area!(valid_area));
-///
-/// let invalid_area = ((2, 2), (1, 1));
-/// assert!(!is_valid_area!(invalid_area));
-/// # }
-///
 #[macro_export]
 macro_rules! is_valid_area {
     ($a:expr) => {{
@@ -159,22 +90,4 @@ macro_rules! is_valid_area {
         let bottom_right = bottom_right!($a);
         !(get_y(upper_left) > get_y(bottom_right) || get_x(upper_left) > get_x(bottom_right))
     }};
-}
-
-/// A `(cols, rows)` size.
-pub type Size = (usize, usize);
-
-pub trait HasSize {
-    fn size(&self) -> Size;
-    fn cols(&self) -> usize {
-        self.size().0
-    }
-    fn rows(&self) -> usize {
-        self.size().1
-    }
-}
-
-pub trait HasPosition {
-    fn origin(&self) -> Pos;
-    fn set_origin(&mut self, new_origin: Pos);
 }

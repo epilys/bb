@@ -129,7 +129,7 @@ impl KernelMetrics {
                         pos_inc(upper_left, (x_offset, 2 + (i % MAX_CPU_ROWS))),
                         bottom_right,
                     ),
-                    false,
+                    None,
                 )
             } else {
                 /* add padding */
@@ -143,7 +143,7 @@ impl KernelMetrics {
                         pos_inc(upper_left, (x_offset, 2 + i % MAX_CPU_ROWS)),
                         bottom_right,
                     ),
-                    false,
+                    None,
                 );
                 write_string_to_grid(
                     "CPU",
@@ -152,17 +152,12 @@ impl KernelMetrics {
                     Color::Default,
                     Attr::Bold,
                     ((x, y), bottom_right),
-                    false,
+                    None,
                 )
             };
             x += 2;
 
             /* Calculate percentages for the cpu usage bar */
-            let busy_length = (cpu_stat.user_time + cpu_stat.system_time)
-                .saturating_sub(self.cpu_stat[i].user_time + self.cpu_stat[i].system_time);
-            let iowait_length = cpu_stat
-                .iowait_time
-                .saturating_sub(self.cpu_stat[i].iowait_time);
             let bar_length: usize = ((cpu_stat
                 .busy_time()
                 .saturating_sub(self.cpu_stat[i].busy_time())
@@ -185,7 +180,7 @@ impl KernelMetrics {
                     Color::Byte(240),
                     Attr::Default,
                     ((x + _x_offset, y), bottom_right),
-                    false,
+                    None,
                 );
                 _x_offset += 1;
             }
@@ -198,7 +193,7 @@ impl KernelMetrics {
                     Color::Byte(235),
                     Attr::Default,
                     ((x + _x_offset, y), bottom_right),
-                    false,
+                    None,
                 );
 
                 _x_offset += 1;
@@ -287,7 +282,7 @@ impl KernelMetrics {
                     Color::Byte(240),
                     Attr::Default,
                     (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    false,
+                    None,
                 );
                 x += cutoff;
             } else {
@@ -298,7 +293,7 @@ impl KernelMetrics {
                     Color::Byte(235),
                     Attr::Default,
                     (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    false,
+                    None,
                 );
                 x += 1;
             }
@@ -311,7 +306,7 @@ impl KernelMetrics {
                 Color::Byte(235),
                 Attr::Default,
                 (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                false,
+                None,
             );
         }
     }
@@ -342,7 +337,7 @@ impl Component for KernelMetrics {
                 Color::Default,
                 Attr::Bold,
                 area,
-                false,
+                None,
             );
             let (x, y) = write_string_to_grid(
                 &self.os_type,
@@ -351,7 +346,7 @@ impl Component for KernelMetrics {
                 Color::Default,
                 Attr::Default,
                 ((x + 2, y), bottom_right),
-                false,
+                None,
             );
             write_string_to_grid(
                 &self.kernel,
@@ -360,7 +355,7 @@ impl Component for KernelMetrics {
                 Color::Default,
                 Attr::Default,
                 ((x + 2, y), bottom_right),
-                false,
+                None,
             );
             self.dirty = false;
         }
@@ -394,7 +389,7 @@ impl Component for KernelMetrics {
                 (get_x(bottom_right) - uptime.len(), get_y(upper_left)),
                 bottom_right,
             ),
-            false,
+            None,
         );
 
         if !tick {
@@ -434,7 +429,7 @@ impl Component for KernelMetrics {
             Color::Default,
             Attr::Bold,
             (upper_left, bottom_right),
-            false,
+            None,
         );
 
         for (i, (tag, s, fg_color, bg_color)) in get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
@@ -448,7 +443,7 @@ impl Component for KernelMetrics {
                 Color::Default,
                 Attr::Default,
                 (pos_inc(upper_left, (0, i + 1)), bottom_right),
-                false,
+                None,
             );
 
             let padding = 6 - s.len();
@@ -461,7 +456,7 @@ impl Component for KernelMetrics {
                 bg_color,
                 Attr::Default,
                 ((x + 2 + padding, y), bottom_right),
-                false,
+                None,
             );
             cpu_column_width = std::cmp::max(tag.len() + s.len() + 4, cpu_column_width);
         }
@@ -478,7 +473,7 @@ impl Component for KernelMetrics {
             Color::Default,
             Attr::Bold,
             (upper_left, bottom_right),
-            false,
+            None,
         );
         let loadavgs = get_loadavg();
         for (i, avg) in loadavgs.into_iter().enumerate() {
@@ -497,7 +492,7 @@ impl Component for KernelMetrics {
                 Color::Default,
                 Attr::Default,
                 (pos_inc(upper_left, (0, i + 1)), bottom_right),
-                false,
+                None,
             );
             grid[pos_inc(upper_left, (0, i + 1))].set_attrs(Attr::Bold);
             grid[pos_inc(upper_left, (1, i + 1))].set_attrs(Attr::Bold);

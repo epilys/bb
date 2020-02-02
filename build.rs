@@ -5,10 +5,10 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::Command;
 
-include!("src/ui/text_processing/types.rs");
+include!("src/text_processing/types.rs");
 
 fn main() -> Result<(), std::io::Error> {
-    let mod_path = PathBuf::from("src/ui/text_processing/tables.rs");
+    let mod_path = PathBuf::from("src/text_processing/tables.rs");
     if mod_path.exists() {
         eprintln!(
             "{} already exists, delete it if you want to replace it.",

@@ -19,8 +19,8 @@
  * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
 
-use crate::ui::text_processing::types::LineBreakClass;
-use crate::ui::text_processing::types::LineBreakClass::*;
+use crate::text_processing::types::LineBreakClass;
+use crate::text_processing::types::LineBreakClass::*;
 
 pub const LINE_BREAK_RULES: &'static [(u32, u32, LineBreakClass)] = &[
     (0x0, 0x8, CM),

@@ -29,7 +29,7 @@
 
 */
 
-use crate::ui::wcwidth::{wcwidth, CodePointsIter};
+use crate::wcwidth::{wcwidth, CodePointsIter};
 extern crate unicode_segmentation;
 use self::unicode_segmentation::UnicodeSegmentation;
 

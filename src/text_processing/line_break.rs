@@ -21,8 +21,8 @@
 
 extern crate unicode_segmentation;
 use self::unicode_segmentation::UnicodeSegmentation;
-use crate::ui::text_processing::tables::LINE_BREAK_RULES;
-use crate::ui::text_processing::types::LineBreakClass;
+use crate::text_processing::tables::LINE_BREAK_RULES;
+use crate::text_processing::types::LineBreakClass;
 use core::cmp::Ordering;
 use core::iter::Peekable;
 use core::str::FromStr;

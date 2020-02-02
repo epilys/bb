@@ -18,17 +18,3 @@
  * You should have received a copy of the GNU General Public License
  * along with bb. If not, see <http://www.gnu.org/licenses/>.
  */
-
-use crate::ui::Key;
-
-/// `ThreadEvent` encapsulates all of the possible values we need to transfer between our threads
-/// to the main process.
-#[derive(Debug)]
-pub enum ThreadEvent {
-    Input(Key),
-}
-#[derive(Debug)]
-pub enum UIEvent {
-    Input(Key),
-    Resize,
-}

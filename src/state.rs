@@ -43,7 +43,7 @@ pub enum UIMode {
     Input,
 }
 
-type StateStdout = termion::screen::AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>;
+pub type StateStdout = termion::screen::AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>;
 
 struct InputHandler {
     rx: Receiver<bool>,
@@ -74,7 +74,7 @@ impl InputHandler {
 
 /// A State object to manage and own components and components of the UI. `State` is responsible for
 /// managing the terminal
-pub struct State {
+pub struct UIState {
     cols: usize,
     rows: usize,
 
@@ -88,20 +88,20 @@ pub struct State {
     pub mode: UIMode,
 }
 
-impl Drop for State {
+impl Drop for UIState {
     fn drop(&mut self) {
         // When done, restore the defaults to avoid messing with the terminal.
         self.switch_to_main_screen();
     }
 }
 
-impl Default for State {
+impl Default for UIState {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl State {
+impl UIState {
     pub fn new() -> Self {
         /* Create a channel to communicate with other threads. The main process is the sole receiver.
          * */
@@ -122,7 +122,7 @@ impl State {
         _stdout.lock();
         let stdout = AlternateScreen::from(_stdout.into_raw_mode().unwrap());
 
-        let mut s = State {
+        let mut s = UIState {
             cols,
             rows,
             grid: CellBuffer::new(cols, rows, Cell::with_char(' ')),

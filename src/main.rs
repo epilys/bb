@@ -232,6 +232,14 @@ fn main() -> Result<(), Error> {
                         state.render();
                         state.redraw(true);
                     },
+                    ThreadEvent::Input(Key::Ctrl('s')) => {
+                        state.rcv_event(UIEvent::Freeze);
+                        state.redraw(false);
+                    }
+                    ThreadEvent::Input(Key::Ctrl('q')) => {
+                        state.rcv_event(UIEvent::Unfreeze);
+                        state.redraw(false);
+                    }
                     ThreadEvent::Input(k) => {
                         match k {
                             Key::Char('q') | Key::Char('Q') if state.mode == UIMode::Normal => {

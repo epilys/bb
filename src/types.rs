@@ -30,5 +30,7 @@ pub enum ThreadEvent {
 #[derive(Debug)]
 pub enum UIEvent {
     Input(Key),
+    Freeze,
+    Unfreeze,
     Resize,
 }

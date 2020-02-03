@@ -1544,6 +1544,16 @@ impl Component for ProcessList {
                 self.force_redraw = true;
                 self.dirty = true;
             }
+            UIEvent::Freeze => {
+                self.freeze = true;
+                self.force_redraw = true;
+                self.dirty = true;
+            }
+            UIEvent::Unfreeze => {
+                self.freeze = false;
+                self.force_redraw = true;
+                self.dirty = true;
+            }
             UIEvent::Input(k) if *k == map["freeze updates"] && (self.mode.input == Inactive) => {
                 self.freeze = !self.freeze;
                 self.force_redraw = true;

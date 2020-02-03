@@ -153,13 +153,21 @@ fn notify(
             let _ = s.send(signal_hook::SIGINT);
         }
     };
-    let sigquit_handler = move |_info: &nix::libc::siginfo_t| {
+    let sigquit_handler = {
+        let state = state.clone();
+        move |_info: &nix::libc::siginfo_t| {
+            crate::state::restore_to_main_screen(state.clone());
+            std::process::exit(131);
+        }
+    };
+    let sigterm_handler = move |_info: &nix::libc::siginfo_t| {
         crate::state::restore_to_main_screen(state.clone());
-        std::process::exit(131);
+        std::process::exit(143);
     };
     unsafe {
         signal_hook_registry::register_sigaction(signal_hook::SIGINT, sigint_handler)?;
         signal_hook_registry::register_sigaction(signal_hook::SIGQUIT, sigquit_handler)?;
+        signal_hook_registry::register_sigaction(signal_hook::SIGTERM, sigterm_handler)?;
     }
     let signals = signal_hook::iterator::Signals::new(signals)?;
     std::thread::spawn(move || {

@@ -141,17 +141,25 @@ fn notify(
     state: Arc<AtomicPtr<StateStdout>>,
 ) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
     let (s, r) = bounded(100);
-    let _s = s.clone();
-    let sigint_handler = move |_info: &nix::libc::siginfo_t| {
-        if exit_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            crate::state::restore_to_main_screen(state.clone());
-            std::process::exit(130);
+    let sigint_handler = {
+        let s = s.clone();
+        let state = state.clone();
+        move |_info: &nix::libc::siginfo_t| {
+            if exit_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                crate::state::restore_to_main_screen(state.clone());
+                std::process::exit(130);
+            }
+            exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = s.send(signal_hook::SIGINT);
         }
-        exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-        let _ = _s.send(signal_hook::SIGINT);
+    };
+    let sigquit_handler = move |_info: &nix::libc::siginfo_t| {
+        crate::state::restore_to_main_screen(state.clone());
+        std::process::exit(131);
     };
     unsafe {
         signal_hook_registry::register_sigaction(signal_hook::SIGINT, sigint_handler)?;
+        signal_hook_registry::register_sigaction(signal_hook::SIGQUIT, sigquit_handler)?;
     }
     let signals = signal_hook::iterator::Signals::new(signals)?;
     std::thread::spawn(move || {

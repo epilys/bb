@@ -142,14 +142,6 @@ enum InputMode {
     Paste,
 }
 
-/*
- * If we fork (for example start $EDITOR) we want the input-thread to stop reading from stdin. The
- * best way I came up with right now is to send a signal to the thread that is read in the first
- * input in stdin after the fork, and then the thread kills itself. The parent process spawns a new
- * input-thread when the child returns.
- *
- * The main loop uses try_wait_on_child() to check if child has exited.
- */
 pub fn get_events(
     stdin: io::Stdin,
     mut closure: impl FnMut(Key),
@@ -168,6 +160,10 @@ pub fn get_events(
             Ok(TermionEvent::Key(TermionKey::Ctrl('c'))) if input_mode == InputMode::Normal => {
                 let self_pid = nix::unistd::Pid::this();
                 nix::sys::signal::kill(self_pid, nix::sys::signal::Signal::SIGINT).unwrap();
+            }
+            Ok(TermionEvent::Key(TermionKey::Ctrl('4'))) if input_mode == InputMode::Normal => {
+                let self_pid = nix::unistd::Pid::this();
+                nix::sys::signal::kill(self_pid, nix::sys::signal::Signal::SIGQUIT).unwrap();
             }
             Ok(TermionEvent::Key(k)) if input_mode == InputMode::Normal => {
                 closure(Key::from(k));

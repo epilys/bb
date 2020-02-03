@@ -43,6 +43,10 @@ pub enum UIMode {
     Input,
 }
 
+use std::sync::{
+    atomic::{AtomicPtr, Ordering},
+    Arc,
+};
 pub type StateStdout = termion::screen::AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>;
 
 struct InputHandler {
@@ -79,7 +83,7 @@ pub struct UIState {
     rows: usize,
 
     grid: CellBuffer,
-    stdout: Option<StateStdout>,
+    pub stdout: Option<Arc<AtomicPtr<StateStdout>>>,
     components: Vec<Box<dyn Component>>,
     pub dirty_areas: VecDeque<Area>,
     sender: Sender<ThreadEvent>,
@@ -118,15 +122,11 @@ impl UIState {
         let cols = termsize.map(|(w, _)| w).unwrap_or(0) as usize;
         let rows = termsize.map(|(_, h)| h).unwrap_or(0) as usize;
 
-        let _stdout = std::io::stdout();
-        _stdout.lock();
-        let stdout = AlternateScreen::from(_stdout.into_raw_mode().unwrap());
-
         let mut s = UIState {
             cols,
             rows,
             grid: CellBuffer::new(cols, rows, Cell::with_char(' ')),
-            stdout: Some(stdout),
+            stdout: None,
             components: Vec::with_capacity(1),
             sender,
             receiver,
@@ -138,16 +138,7 @@ impl UIState {
             mode: UIMode::Normal,
         };
 
-        write!(
-            s.stdout(),
-            "{}{}{}{}",
-            BracketModeStart,
-            cursor::Hide,
-            clear::All,
-            cursor::Goto(1, 1)
-        )
-        .unwrap();
-        s.flush();
+        s.switch_to_alternate_screen();
         s.restore_input();
         s
     }
@@ -157,31 +148,44 @@ impl UIState {
     pub fn switch_to_main_screen(&mut self) {
         write!(
             self.stdout(),
-            "{}{}{}",
+            "{}{}{}{}",
             termion::screen::ToMainScreen,
             cursor::Show,
+            RestoreWindowTitleIconFromStack,
             BracketModeEnd,
         )
         .unwrap();
         self.flush();
-        self.stdout = None;
+        if let Some(stdout) = self.stdout.take() {
+            let termios: Box<StateStdout> =
+                unsafe { std::boxed::Box::from_raw(stdout.load(Ordering::Relaxed)) };
+            drop(termios);
+        }
+
         self.input.kill();
     }
+
     pub fn switch_to_alternate_screen(&mut self) {
         let s = std::io::stdout();
-        s.lock();
-        self.stdout = Some(AlternateScreen::from(s.into_raw_mode().unwrap()));
+
+        let mut stdout = AlternateScreen::from(s.into_raw_mode().unwrap());
 
         write!(
-            self.stdout(),
-            "{}{}{}{}{}",
+            &mut stdout,
+            "{save_title_to_stack}{}{}{}{window_title}{}{}",
             termion::screen::ToAlternateScreen,
             cursor::Hide,
             clear::All,
             cursor::Goto(1, 1),
             BracketModeStart,
+            save_title_to_stack = SaveWindowTitleIconToStack,
+            window_title = "\x1b]2;bb\x07",
         )
         .unwrap();
+
+        let termios = Box::new(stdout);
+        let stdout = std::sync::atomic::AtomicPtr::new(std::boxed::Box::into_raw(termios));
+        self.stdout = Some(Arc::new(stdout));
         self.flush();
     }
 
@@ -197,9 +201,12 @@ impl UIState {
         if termcols.unwrap_or(72) as usize != self.cols
             || termrows.unwrap_or(120) as usize != self.rows
         {
-            eprintln!(
+            std::dbg!(
                 "Size updated, from ({}, {}) -> ({:?}, {:?})",
-                self.cols, self.rows, termcols, termrows
+                self.cols,
+                self.rows,
+                termcols,
+                termrows
             );
         }
         self.cols = termcols.unwrap_or(72) as usize;
@@ -340,16 +347,30 @@ impl UIState {
     }
 
     fn flush(&mut self) {
-        if let Some(s) = self.stdout.as_mut() {
-            s.flush().unwrap();
-        }
+        self.stdout().flush().unwrap();
     }
 
     fn stdout(&mut self) -> &mut StateStdout {
-        self.stdout.as_mut().unwrap()
+        unsafe {
+            self.stdout
+                .as_ref()
+                .unwrap()
+                .load(Ordering::Relaxed)
+                .as_mut()
+                .unwrap()
+        }
     }
 
     pub fn restore_input(&self) {
         self.input.restore(self.sender.clone());
     }
+}
+
+pub fn restore_to_main_screen(stdout: Arc<AtomicPtr<StateStdout>>) {
+    let mut stdout: Box<StateStdout> =
+        unsafe { std::boxed::Box::from_raw(stdout.load(Ordering::SeqCst)) };
+    let _ = stdout.flush();
+    let _ = stdout.write_all(b"\x1B[?25h\x1B[?2004l");
+    let _ = stdout.flush();
+    drop(stdout);
 }

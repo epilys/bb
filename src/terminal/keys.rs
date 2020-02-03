@@ -165,6 +165,10 @@ pub fn get_events(
             }
         };
         match c {
+            Ok(TermionEvent::Key(TermionKey::Ctrl('c'))) if input_mode == InputMode::Normal => {
+                let self_pid = nix::unistd::Pid::this();
+                nix::sys::signal::kill(self_pid, nix::sys::signal::Signal::SIGINT).unwrap();
+            }
             Ok(TermionEvent::Key(k)) if input_mode == InputMode::Normal => {
                 closure(Key::from(k));
             }
@@ -235,3 +239,13 @@ derive_csi_sequence!(
 
 pub const BRACKET_PASTE_START: &[u8] = b"\x1B[200~";
 pub const BRACKET_PASTE_END: &[u8] = b"\x1B[201~";
+
+derive_csi_sequence!(
+    #[doc = "`CSI Ps ; Ps ; Ps t`, where `Ps = 2 2 ; 0`  -> Save xterm icon and window title on stack."]
+    (SaveWindowTitleIconToStack, "22;0t")
+);
+
+derive_csi_sequence!(
+    #[doc = "Restore window title and icon from terminal's title stack. `CSI Ps ; Ps ; Ps t`, where `Ps = 2 3 ; 0`  -> Restore xterm icon and window title from stack."]
+    (RestoreWindowTitleIconFromStack, "23;0t")
+);

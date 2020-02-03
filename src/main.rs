@@ -26,6 +26,10 @@ use crossbeam::channel::{bounded, tick};
 use crossbeam::select;
 use libc::c_int;
 use std::io::Error;
+use std::sync::{
+    atomic::{AtomicBool, AtomicPtr},
+    Arc,
+};
 use std::time::Duration;
 
 //#[allow(dead_code)]
@@ -131,8 +135,24 @@ pub mod username {
     }
 }
 
-fn notify(signals: &[c_int]) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
+fn notify(
+    signals: &[c_int],
+    exit_flag: Arc<AtomicBool>,
+    state: Arc<AtomicPtr<StateStdout>>,
+) -> Result<crossbeam::channel::Receiver<c_int>, Error> {
     let (s, r) = bounded(100);
+    let _s = s.clone();
+    let sigint_handler = move |_info: &nix::libc::siginfo_t| {
+        if exit_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            crate::state::restore_to_main_screen(state.clone());
+            std::process::exit(130);
+        }
+        exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = _s.send(signal_hook::SIGINT);
+    };
+    unsafe {
+        signal_hook_registry::register_sigaction(signal_hook::SIGINT, sigint_handler)?;
+    }
     let signals = signal_hook::iterator::Signals::new(signals)?;
     std::thread::spawn(move || {
         for signal in signals.forever() {
@@ -143,21 +163,28 @@ fn notify(signals: &[c_int]) -> Result<crossbeam::channel::Receiver<c_int>, Erro
 }
 
 fn main() -> Result<(), Error> {
+    /* Create the application State */
+    let mut state = UIState::new();
+
     let signals = &[
+        /*
         signal_hook::SIGALRM,
         signal_hook::SIGTERM,
         signal_hook::SIGINT,
         signal_hook::SIGQUIT,
+        */
         /* Catch SIGWINCH to handle terminal resizing */
         signal_hook::SIGWINCH,
     ];
 
     let ticker = tick(Duration::from_millis(1600));
 
-    let signal_recvr = notify(signals)?;
-
-    /* Create the application State */
-    let mut state = UIState::new();
+    let exit_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let signal_recvr = notify(
+        signals,
+        exit_flag.clone(),
+        state.stdout.as_ref().unwrap().clone(),
+    )?;
 
     let receiver = state.receiver();
     let window = Box::new(Window::new(
@@ -177,13 +204,17 @@ fn main() -> Result<(), Error> {
                 state.redraw(true);
             },
             recv(signal_recvr) -> sig => {
-                eprintln!("got signal {:?}", sig);
                 match sig.unwrap() {
                     signal_hook::SIGWINCH => {
                         state.update_size();
                         state.render();
                         state.redraw(true);
                     },
+                    signal_hook::SIGINT => {
+
+                                drop(state);
+                                break 'main;
+                    }
                     _ => {}
                 }
             },

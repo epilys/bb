@@ -1675,10 +1675,11 @@ impl Component for ProcessList {
             {
                 let ref n = self.mode.kill;
                 use nix::sys::signal::kill;
+                use std::convert::TryFrom;
 
                 kill(
                     nix::unistd::Pid::from_raw(self.get_pid_under_cursor(self.cursor)),
-                    nix::sys::signal::Signal::from_c_int(*n as i32).unwrap(),
+                    nix::sys::signal::Signal::try_from(*n as i32).unwrap(),
                 )
                 .ok()
                 .take();

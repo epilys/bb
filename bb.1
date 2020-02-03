@@ -1,0 +1,76 @@
+.\" bb - bb.1
+.\"
+.\" Copyright 2019-2020 Manos Pitsidianakis
+.\"
+.\" This file is part of bb.
+.\"
+.\" bb is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" bb is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with bb. If not, see <http://www.gnu.org/licenses/>.
+.\"
+.Dd February 3, 2020
+.Dt BB 1
+.Os
+.Sh NAME
+.Nm bb
+.Nd your system's Big Brother
+.Sh SYNOPSIS
+.Nm
+.Sh DESCRIPTION
+simple process viewer (for functionalities, press `h` within `bb` or see shortcuts below)
+.Sh SHORTCUTS
+.Bl -tag -width 36n
+.It 'h'
+Toggle help overlay
+.It 'F'
+Follow process and its children.
+Type the pid you want to follow
+.It 'L'
+Highlight process.
+Type the pid you want to highlight
+.It 'k'
+Kill process under cursor.
+Press Enter to confirm kill, or Esc to cancel
+.It 'f'
+(un)freeze process list updates
+.It '/'
+Search process list
+.It 'n'
+Next search result
+.It 'N'
+Previous search result
+.It Space
+Filter process list
+.It 't'
+toggle tree view
+.It F1
+toggles/activates username sorting
+.It F2
+toggles/activates vm_rss sorting
+.It F3
+toggles/activates cpu% sorting
+.It F4
+toggles/activates cmd_line sorting
+.It Esc
+Cancel action
+.El
+.Sh SEE ALSO
+.Xr top 1 ,
+.Xr proc 5
+.Sh AUTHORS
+Copyright 2019-2020
+.An Manos Pitsidianakis Aq epilys@nessuent.xyz
+Released under the GPL, version 3 or greater.
+This software carries no warranty of any kind.
+(See COPYING for full copyright and warranty notices.)
+.Pp
+.Aq https://nessuent.xyz/bb

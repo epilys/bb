@@ -49,7 +49,11 @@ pub mod username {
     use libc;
     use std::ptr::null_mut;
     /* taken from whoami-0.1.1 */
-    fn getpwuid(pw_uid: u32, buffer: &mut [i8; 16384]) -> Option<libc::passwd> {
+    fn getpwuid(
+        pw_uid: u32,
+        #[cfg(not(all(target_arch = "arm", target_pointer_width = "32")))] buffer: &mut [i8; 16384],
+        #[cfg(all(target_arch = "arm", target_pointer_width = "32"))] buffer: &mut [u8; 16384],
+    ) -> Option<libc::passwd> {
         let mut pwentp = null_mut();
         #[cfg(any(
             target_os = "macos",
@@ -106,7 +110,10 @@ pub mod username {
     }
 
     pub fn username(uid: u32) -> String {
+        #[cfg(not(all(target_arch = "arm", target_pointer_width = "32")))]
         let mut buffer = [0i8; 16384]; // from the man page
+        #[cfg(all(target_arch = "arm", target_pointer_width = "32"))]
+        let mut buffer = [0u8; 16384]; // from the man page
         let pwent = getpwuid(uid, &mut buffer);
 
         let string;

@@ -439,9 +439,10 @@ impl Component for KernelMetrics {
             None,
         );
 
-        for (i, (tag, s, fg_color, bg_color)) in get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
-            .into_iter()
-            .enumerate()
+        for (i, (tag, s, fg_color, bg_color, attr)) in
+            get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
+                .into_iter()
+                .enumerate()
         {
             let (x, y) = write_string_to_grid(
                 tag,
@@ -461,7 +462,7 @@ impl Component for KernelMetrics {
                 grid,
                 fg_color,
                 bg_color,
-                Attr::Default,
+                attr,
                 ((x + 2 + padding, y), bottom_right),
                 None,
             );
@@ -564,7 +565,7 @@ fn get_loadavg() -> [String; 3] {
 fn get_cpu_times(
     old_cpu_stat: &Stat,
     cpu_stat: &Stat,
-) -> Vec<(&'static str, String, Color, Color)> {
+) -> Vec<(&'static str, String, Color, Color, Attr)> {
     let mut ret = Vec::new();
 
     macro_rules! val {
@@ -592,6 +593,15 @@ fn get_cpu_times(
                     Color::Red
                 } else {
                     Color::Default
+                },
+                if percent < 0.15 {
+                    Attr::Default
+                } else if percent < 0.50 {
+                    Attr::Bold
+                } else if $tag != "idle   " {
+                    Attr::Bold
+                } else {
+                    Attr::Default
                 },
             ));
         };

@@ -259,25 +259,34 @@ impl KernelMetrics {
             );
         }
         let x = mem_bar_length / 8 + 3;
-
-        if mem_bar_length % 8 > 0 {
+        write_string_to_grid(
+            if mem_bar_length % 8 == 7 {
+                "▉"
+            } else if mem_bar_length % 8 == 6 {
+                "▊"
+            } else if mem_bar_length % 8 == 5 {
+                "▋"
+            } else if mem_bar_length % 8 == 4 {
+                "▌"
+            } else if mem_bar_length % 8 == 3 {
+                "▍"
+            } else if mem_bar_length % 8 == 2 {
+                "▎"
+            } else if mem_bar_length % 8 == 1 {
+                "▏"
+            } else {
+                " "
+            },
+            grid,
+            Color::Byte(240),
+            Color::Default,
+            Attr::Default,
+            (pos_inc(upper_left, (x, y_offset)), bottom_right),
+            None,
+        );
+        for x in x..(bars_max + 2) {
             write_string_to_grid(
-                if mem_bar_length % 8 == 7 {
-                    "▉"
-                } else if mem_bar_length % 8 == 6 {
-                    "▊"
-                } else if mem_bar_length % 8 == 5 {
-                    "▋"
-                } else if mem_bar_length % 8 == 4 {
-                    "▌"
-                } else if mem_bar_length % 8 == 3 {
-                    "▍"
-                } else if mem_bar_length % 8 == 2 {
-                    "▎"
-                } else {
-                    // mem_bar_length % 8 == 1
-                    "▏"
-                },
+                " ",
                 grid,
                 Color::Byte(240),
                 Color::Default,

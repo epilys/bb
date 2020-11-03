@@ -70,6 +70,13 @@ const SIGNAL_LIST: &[(i32, &'static str)] = &[
     (31, "31 SYS"),
 ];
 
+//const ARROW_UP: &str = "↑";
+//const ARROW_DOWN: &str = "↓";
+//const ARROW_UP: &str = "▲";
+//const ARROW_DOWN: &str = "▼";
+const ARROW_UP: &str = "🠉";
+const ARROW_DOWN: &str = "🠋";
+
 /* Hold maximum width for each column */
 #[derive(Debug)]
 pub struct ColumnWidthMaxima {
@@ -881,10 +888,10 @@ impl Component for ProcessList {
                     max_vm_rss = self.maxima.vm_rss,
                     max_cpu_percent = self.maxima.cpu_percent,
                     max_state = self.maxima.state,
-                    usernamesort = if let Sort::UserAsc = self.sort { "↑" } else if let Sort::UserDesc = self.sort { "↓" } else { " " },
-                    vmrsssort = if let Sort::VmRssAsc = self.sort { "↑" } else if let Sort::VmRssDesc = self.sort { "↓" } else { " " },
-                    cpusort = if let Sort::CpuAsc = self.sort { "↑" } else if let Sort::CpuDesc = self.sort { "↓" } else { " " },
-                    cmd_linesort = if let Sort::CmdLineAsc = self.sort { "↑" } else if let Sort::CmdLineDesc = self.sort { "↓" } else { "" },
+                    usernamesort = if let Sort::UserAsc = self.sort { ARROW_UP } else if let Sort::UserDesc = self.sort { ARROW_DOWN } else { " " },
+                    vmrsssort = if let Sort::VmRssAsc = self.sort { ARROW_UP } else if let Sort::VmRssDesc = self.sort { ARROW_DOWN } else { " " },
+                    cpusort = if let Sort::CpuAsc = self.sort { ARROW_UP } else if let Sort::CpuDesc = self.sort { ARROW_DOWN } else { " " },
+                    cmd_linesort = if let Sort::CmdLineAsc = self.sort { ARROW_UP } else if let Sort::CmdLineDesc = self.sort { ARROW_DOWN } else { "" },
                 ),
                 grid,
                 Color::Black,

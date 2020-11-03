@@ -582,8 +582,6 @@ fn get_cpu_times(
                 s,
                 if percent < 0.15 {
                     Color::Default
-                } else if percent < 0.50 {
-                    Color::Default
                 } else {
                     Color::White
                 },

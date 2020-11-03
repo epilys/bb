@@ -295,15 +295,17 @@ impl KernelMetrics {
                 None,
             );
         }
-        write_string_to_grid(
-            "▕",
-            grid,
-            Color::Byte(240),
-            Color::Default,
-            Attr::Default,
-            (pos_inc(upper_left, (bars_max + 2, y_offset)), bottom_right),
-            None,
-        );
+        if available_length > 0 {
+            write_string_to_grid(
+                "▕",
+                grid,
+                Color::Byte(240),
+                Color::Default,
+                Attr::Default,
+                (pos_inc(upper_left, (bars_max + 2, y_offset)), bottom_right),
+                None,
+            );
+        }
         write_string_to_grid(
             &mem_display,
             grid,

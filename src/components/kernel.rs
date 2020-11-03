@@ -233,11 +233,11 @@ impl KernelMetrics {
         /*  available_length == the length the spaces takes up in this case:
          *  |********       | 50%
          */
-        let available_length = ((available as f64 / total as f64) * bars_max as f64) as usize;
+        let available_length = ((available as f64 / total as f64) * (bars_max * 8) as f64) as usize;
         /*  mem_bar length == the length the asterisks takes up in this case:
          *  |********       | 50%
          */
-        let mem_bar_length = bars_max - available_length;
+        let mem_bar_length = bars_max * 8 - available_length;
         let mem_display = format!(
             "RAM {}/{}",
             Bytes((total - available) * 1024).as_convenient_string(),
@@ -247,68 +247,66 @@ impl KernelMetrics {
         let mem_display_padding = bars_max.saturating_sub(mem_display.len()) / 2;
 
         let y_offset = 2 + MAX_CPU_ROWS;
-        let mut x = 0;
-        /* Calculate spillover of mem_display string to available part of the bar in order to
-         * paint it differently
-         *
-         * If "RAM 1GB/2GB" is printed over this bar:
-         *
-         *          |**********          |
-         *
-         * Some part of the string will have different colors than the rest of it, because the
-         * available part of the bar has different colors.
-         *
-         *                   cutoff
-         *                     ⇩
-         *                RAM 1GB/2GB
-         *                ↓ ↓ ↓ ↓ ↓ ↓ (string overlays asterisks and spaces)
-         *          |**********          |
-         * */
-        let cutoff = std::cmp::min(
-            mem_display.len(),
-            if mem_display_padding + mem_display.len() > mem_bar_length {
-                mem_bar_length - mem_display_padding
-            } else {
-                mem_display.len()
-            },
-        );
-
-        while x <= available_length + mem_bar_length {
-            if x == mem_display_padding {
-                let (_x, _) = write_string_to_grid(
-                    &mem_display[0..cutoff],
-                    grid,
-                    Color::White,
-                    Color::Byte(240),
-                    Attr::Default,
-                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    None,
-                );
-                x += cutoff;
-            } else {
-                write_string_to_grid(
-                    "█",
-                    grid,
-                    Color::Byte(240),
-                    Color::Byte(235),
-                    Attr::Default,
-                    (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
-                    None,
-                );
-                x += 1;
-            }
-        }
-        if cutoff != mem_display.len() {
-            let (_x, _) = write_string_to_grid(
-                &mem_display[cutoff..],
+        for x in 2..=(mem_bar_length / 8 + 2) {
+            write_string_to_grid(
+                "█",
                 grid,
-                Color::White,
-                Color::Byte(235),
+                Color::Byte(240),
+                Color::Default,
                 Attr::Default,
-                (pos_inc(upper_left, (x + 2, y_offset)), bottom_right),
+                (pos_inc(upper_left, (x, y_offset)), bottom_right),
                 None,
             );
         }
+        let x = mem_bar_length / 8 + 3;
+
+        if mem_bar_length % 8 > 0 {
+            write_string_to_grid(
+                if mem_bar_length % 8 == 7 {
+                    "▉"
+                } else if mem_bar_length % 8 == 6 {
+                    "▊"
+                } else if mem_bar_length % 8 == 5 {
+                    "▋"
+                } else if mem_bar_length % 8 == 4 {
+                    "▌"
+                } else if mem_bar_length % 8 == 3 {
+                    "▍"
+                } else if mem_bar_length % 8 == 2 {
+                    "▎"
+                } else {
+                    // mem_bar_length % 8 == 1
+                    "▏"
+                },
+                grid,
+                Color::Byte(240),
+                Color::Default,
+                Attr::Default,
+                (pos_inc(upper_left, (x, y_offset)), bottom_right),
+                None,
+            );
+        }
+        write_string_to_grid(
+            "▕",
+            grid,
+            Color::Byte(240),
+            Color::Default,
+            Attr::Default,
+            (pos_inc(upper_left, (bars_max + 2, y_offset)), bottom_right),
+            None,
+        );
+        write_string_to_grid(
+            &mem_display,
+            grid,
+            Color::White,
+            Color::Byte(235),
+            Attr::Default,
+            (
+                pos_inc(upper_left, (mem_display_padding + 2, y_offset)),
+                bottom_right,
+            ),
+            None,
+        );
     }
 }
 

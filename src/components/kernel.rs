@@ -474,7 +474,7 @@ impl Component for KernelMetrics {
             None,
         );
         let loadavgs = get_loadavg();
-        for (i, avg) in loadavgs.into_iter().enumerate() {
+        for (i, avg) in loadavgs.iter().enumerate() {
             write_string_to_grid(
                 &format!(
                     "{}  {}",

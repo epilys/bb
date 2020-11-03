@@ -523,27 +523,23 @@ fn get_mem_info() -> (usize, usize) {
     let mut file = File::open("/proc/meminfo").unwrap();
     let mut res = String::with_capacity(2048);
     file.read_to_string(&mut res).unwrap();
-    let mut lines_iter = res.lines();
-    let mem_total = usize::from_str(
-        lines_iter
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .skip(1)
-            .next()
-            .unwrap(),
-    )
-    .unwrap();
-    let mem_available = usize::from_str(
-        lines_iter
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .skip(1)
-            .next()
-            .unwrap(),
-    )
-    .unwrap();
+    let mut mem_total = 0;
+    let mut mem_available = 0;
+    let mut counter = 0;
+    for line in res.lines() {
+        if line.starts_with("MemTotal") {
+            mem_total = usize::from_str(line.split_whitespace().skip(1).next().unwrap()).unwrap();
+            counter += 1;
+        } else if line.starts_with("MemAvailable") {
+            mem_available =
+                usize::from_str(line.split_whitespace().skip(1).next().unwrap()).unwrap();
+            counter += 1;
+        }
+
+        if counter == 2 {
+            break;
+        }
+    }
     (mem_available, mem_total)
 }
 

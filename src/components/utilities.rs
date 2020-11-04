@@ -111,7 +111,7 @@ impl Stat {
 }
 
 pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
-    let mut file = File::open("/proc/stat").unwrap();
+    let mut file = File::open("/proc/stat").expect(crate::PROC_FS_ERROR_STR);
     let mut res = String::with_capacity(2048);
     file.read_to_string(&mut res).unwrap();
     let mut lines_iter = res.lines();

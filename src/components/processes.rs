@@ -1832,7 +1832,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
     let cpu_stat = cpu_stats.remove(0);
     let multiplier = (cpu_no as f64) * 10000.0;
     let divisor = (cpu_stat.total_time() - data_cpu_stat.total_time()) as f64;
-    for entry in std::fs::read_dir("/proc/").unwrap() {
+    for entry in std::fs::read_dir("/proc/").expect(crate::PROC_FS_ERROR_STR) {
         let dir = entry.unwrap();
         if let Some(fname) = dir.file_name().to_str() {
             if !fname.chars().all(|c| c.is_numeric()) {

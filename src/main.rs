@@ -32,6 +32,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
+pub const PROC_FS_ERROR_STR: &str = "/proc/ filesystem not found, are you running this on linux?";
+
 //#[allow(dead_code)]
 mod text_processing;
 pub use crate::text_processing::*;

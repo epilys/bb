@@ -46,14 +46,14 @@ impl fmt::Display for KernelMetrics {
 
 impl KernelMetrics {
     pub fn new() -> Self {
-        let mut file = File::open("/proc/sys/kernel/hostname").unwrap();
+        let mut file = File::open("/proc/sys/kernel/hostname").expect(crate::PROC_FS_ERROR_STR);
         let mut hostname = String::new();
         file.read_to_string(&mut hostname).unwrap();
         let mut kernel = String::new();
-        file = File::open("/proc/sys/kernel/version").unwrap();
+        file = File::open("/proc/sys/kernel/version").expect(crate::PROC_FS_ERROR_STR);
         file.read_to_string(&mut kernel).unwrap();
         let mut os_type = String::new();
-        file = File::open("/proc/sys/kernel/ostype").unwrap();
+        file = File::open("/proc/sys/kernel/ostype").expect(crate::PROC_FS_ERROR_STR);
         file.read_to_string(&mut os_type).unwrap();
         let mut boot_time = 0;
         let cpu_stat = get_stat(&mut boot_time);
@@ -370,7 +370,7 @@ impl Component for KernelMetrics {
         }
 
         /* Draw uptime */
-        let mut file = File::open("/proc/uptime").unwrap();
+        let mut file = File::open("/proc/uptime").expect(crate::PROC_FS_ERROR_STR);
         self.uptime.clear();
         file.read_to_string(&mut self.uptime).unwrap();
         let seconds: usize =
@@ -530,7 +530,7 @@ impl Component for KernelMetrics {
 }
 
 fn get_mem_info() -> (usize, usize) {
-    let mut file = File::open("/proc/meminfo").unwrap();
+    let mut file = File::open("/proc/meminfo").expect(crate::PROC_FS_ERROR_STR);
     let mut res = String::with_capacity(2048);
     file.read_to_string(&mut res).unwrap();
     let mut mem_total = 0;
@@ -554,7 +554,7 @@ fn get_mem_info() -> (usize, usize) {
 }
 
 fn get_loadavg() -> [String; 3] {
-    let mut file = File::open("/proc/loadavg").unwrap();
+    let mut file = File::open("/proc/loadavg").expect(crate::PROC_FS_ERROR_STR);
     let mut res = String::with_capacity(2048);
     file.read_to_string(&mut res).unwrap();
     let mut mut_value_iter = res.split_whitespace();

@@ -57,8 +57,8 @@ pub mod username {
     /* taken from whoami-0.1.1 */
     fn getpwuid(
         pw_uid: u32,
-        #[cfg(not(all(target_arch = "arm", target_pointer_width = "32")))] buffer: &mut [i8; 16384],
-        #[cfg(all(target_arch = "arm", target_pointer_width = "32"))] buffer: &mut [u8; 16384],
+        #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))] buffer: &mut [i8; 16384],
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))] buffer: &mut [u8; 16384],
     ) -> Option<libc::passwd> {
         let mut pwentp = null_mut();
         #[cfg(any(

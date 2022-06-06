@@ -25,7 +25,7 @@ signal-hook-registry = "1.2.0"
 termion = "1.5.3"
 libc = "0.2.62"
 unicode-segmentation = "1.2.1"
-nix = "0.16.1"
+nix = "0.20.2"
 cassowary = "^0.3.0"
 
 [profile.release]

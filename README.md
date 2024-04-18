@@ -1,3 +1,10 @@
+[![License]][gpl3]&nbsp;[![No Maintenance Intended]][no-maintenance]
+
+[gpl3]: https://github.com/epilys/bb/blob/main/COPYING
+[License]: https://img.shields.io/github/license/epilys/bb?color=white
+[No Maintenance Intended]: https://img.shields.io/badge/No%20Maintenance%20Intended-%F0%9F%97%99-red
+[no-maintenance]: https://unmaintained.tech/
+
 ## NAME
      bb — your system's Big Brother
 

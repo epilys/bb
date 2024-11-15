@@ -1,41 +1,42 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
 
-/*! The application's state.
+//! The application's state.
+//!
+//! The UI crate has an Box<dyn Component>-Component-System design. The System
+//! part, is also the application's state, so they're both merged in the `State`
+//! struct.
+//!
+//! `State` owns all the Components of the UI. In the application's main event
+//! loop, input is handed to the state in the form of `UIEvent` objects which
+//! traverse the component graph. Components decide to handle each input or not.
+//!
+//! Input is received in the main loop from threads which listen on the stdin
+//! for user input, observe folders for file changes etc. The relevant struct is
+//! `ThreadEvent`.
 
-The UI crate has an Box<dyn Component>-Component-System design. The System part, is also the application's state, so they're both merged in the `State` struct.
+use std::{collections::VecDeque, io::Write};
 
-`State` owns all the Components of the UI. In the application's main event loop, input is handed to the state in the form of `UIEvent` objects which traverse the component graph. Components decide to handle each input or not.
-
-Input is received in the main loop from threads which listen on the stdin for user input, observe folders for file changes etc. The relevant struct is `ThreadEvent`.
-*/
+use crossbeam::channel::{Receiver, Sender};
+use termion::{clear, cursor, raw::IntoRawMode, screen::AlternateScreen};
 
 use super::*;
-use crossbeam::channel::{Receiver, Sender};
-use std::collections::VecDeque;
-use std::io::Write;
-
-use termion::raw::IntoRawMode;
-use termion::screen::AlternateScreen;
-use termion::{clear, cursor};
 
 #[derive(PartialEq)]
 pub enum UIMode {
@@ -76,8 +77,8 @@ impl InputHandler {
     }
 }
 
-/// A State object to manage and own components and components of the UI. `State` is responsible for
-/// managing the terminal
+/// A State object to manage and own components and components of the UI.
+/// `State` is responsible for managing the terminal
 pub struct UIState {
     cols: usize,
     rows: usize,
@@ -107,15 +108,13 @@ impl Default for UIState {
 
 impl UIState {
     pub fn new() -> Self {
-        /* Create a channel to communicate with other threads. The main process is the sole receiver.
-         * */
+        // Create a channel to communicate with other threads. The main process is
+        // the sole receiver.
         let (sender, receiver) =
             crossbeam::channel::bounded(32 * ::std::mem::size_of::<ThreadEvent>());
 
-        /*
-         * Create async channel to block the input-thread if we need to fork and stop it from reading
-         * stdin, see get_events() for details
-         * */
+        // Create async channel to block the input-thread if we need to fork and stop
+        // it from reading stdin, see get_events() for details
         let (input_sender, input_receiver) = crossbeam::channel::unbounded();
 
         let termsize = termion::terminal_size().ok();
@@ -143,8 +142,8 @@ impl UIState {
         s
     }
 
-    /// Switch back to the terminal's main screen (The command line the user sees before opening
-    /// the application)
+    /// Switch back to the terminal's main screen (The command line the user
+    /// sees before opening the application)
     pub fn switch_to_main_screen(&mut self) {
         write!(
             self.stdout(),
@@ -179,7 +178,7 @@ impl UIState {
             cursor::Goto(1, 1),
             BracketModeStart,
             save_title_to_stack = SaveWindowTitleIconToStack,
-            window_title = "\x1b]2;bb\x07",
+            window_title = concat!("\x1b]2;", env!("CARGO_PKG_NAME"), "bb\x07"),
         )
         .unwrap();
 
@@ -193,7 +192,8 @@ impl UIState {
         self.receiver.clone()
     }
 
-    /// On `SIGWNICH` the `State` redraws itself according to the new terminal size.
+    /// On `SIGWNICH` the `State` redraws itself according to the new terminal
+    /// size.
     pub fn update_size(&mut self) {
         let termsize = termion::terminal_size().ok();
         let termcols = termsize.map(|(w, _)| w);
@@ -225,9 +225,9 @@ impl UIState {
             self.draw_component(i, tick);
         }
         let mut areas: Vec<Area> = self.dirty_areas.drain(0..).collect();
-        /* Sort by x_start, ie upper_left corner's x coordinate */
+        // Sort by x_start, ie upper_left corner's x coordinate
         areas.sort_by(|a, b| (a.0).0.partial_cmp(&(b.0).0).unwrap());
-        /* draw each dirty area */
+        // draw each dirty area
         let rows = self.rows;
         for y in 0..rows {
             let mut segment = None;
@@ -340,7 +340,7 @@ impl UIState {
     }
     /// The application's main loop sends `UIEvents` to state via this method.
     pub fn rcv_event(&mut self, mut event: UIEvent) {
-        /* inform each component */
+        // inform each component
         for i in 0..self.components.len() {
             self.components[i].process_event(&mut event, &mut self.mode);
         }

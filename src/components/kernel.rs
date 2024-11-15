@@ -1,32 +1,29 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
+
+use std::{fs::File, io::prelude::*, str::FromStr};
 
 use super::*;
-use std::fs::File;
-use std::io::prelude::*;
-use std::str::FromStr;
 
-/* if cpu_no > MAX_CPU_ROWS, the cpu bars wrap in columns */
+/// if cpu_no > MAX_CPU_ROWS, the cpu bars wrap in columns
 static MAX_CPU_ROWS: usize = 5;
-/* Kernel metrics components */
+/// Kernel metrics components
 #[derive(Debug)]
 pub struct KernelMetrics {
     hostname: String,
@@ -41,6 +38,12 @@ pub struct KernelMetrics {
 impl fmt::Display for KernelMetrics {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "kernel")
+    }
+}
+
+impl Default for KernelMetrics {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -68,35 +71,36 @@ impl KernelMetrics {
         }
     }
 
-    /* Returns width of entire widget */
+    /// Returns width of entire widget
     fn draw_cpu_bars(&mut self, grid: &mut CellBuffer, area: Area) -> usize {
         let upper_left = upper_left!(area);
         let total_cols = width!(area);
-        /* no of bars is no of CPUs along with the total CPU usage  */
+        // no of bars is no of CPUs along with the total CPU usage
         let cpu_no = self.cpu_stat.len();
 
-        /* Calculate how much horizontal space the labels (ie CPU0, CPU1, CPU2) take in order to
-         * distribute the remainder for each column, specifically the bars */
+        // Calculate how much horizontal space the labels (ie CPU0, CPU1, CPU2) take
+        // in order to distribute the remainder for each column, specifically
+        // the bars
         let mut cpu_label_space = 0;
         let mut cpu_bar_columns = 0;
         let mut i = 0;
         while i < cpu_no {
-            /* Reserve space for CPU labels */
+            // Reserve space for CPU labels
             if i < 10 {
-                /* label will be " CPU0  " */
+                // label will be " CPU0  "
                 cpu_label_space += 7;
             } else if i < 100 {
-                /* label will be " CPU32  " */
+                // label will be " CPU32  "
                 cpu_label_space += 8;
             } else {
-                /* label will be " CPU128  " */
+                // label will be " CPU128  "
                 cpu_label_space += 9;
             }
-            /* each column holds MAX_CPU_ROWS */
+            // each column holds MAX_CPU_ROWS
             i += MAX_CPU_ROWS;
             cpu_bar_columns += 1;
         }
-        /* max width of each cpu bar */
+        // max width of each cpu bar
         let bar_width = if cpu_no < MAX_CPU_ROWS {
             total_cols
         } else {
@@ -132,7 +136,7 @@ impl KernelMetrics {
                     None,
                 )
             } else {
-                /* add padding */
+                // add padding
                 let (x, y) = write_string_to_grid(
                     "Σ",
                     grid,
@@ -157,7 +161,7 @@ impl KernelMetrics {
             };
             x += 2;
 
-            /* Calculate percentages for the cpu usage bar */
+            // Calculate percentages for the cpu usage bar
             let bar_length: usize = ((cpu_stat
                 .busy_time()
                 .saturating_sub(self.cpu_stat[i].busy_time())
@@ -170,7 +174,7 @@ impl KernelMetrics {
                 return x_offset;
             }
 
-            /* Sometimes you draw the bar */
+            // Sometimes you draw the bar
             let mut _x_offset = 0;
             while _x_offset < bar_length {
                 write_string_to_grid(
@@ -184,7 +188,7 @@ impl KernelMetrics {
                 );
                 _x_offset += 1;
             }
-            /* and sometimes the bar draws you */
+            // and sometimes the bar draws you
             while _x_offset <= bar_width {
                 write_string_to_grid(
                     "▁",
@@ -224,26 +228,24 @@ impl KernelMetrics {
         let upper_left = upper_left!(area);
         let bottom_right = bottom_right!(area);
         if bars_max == 0 {
-            /* In first draw, we have no cpu data since there is no previous measurement to use
-             * in the calculation so bars_max will be 0 */
+            // In first draw, we have no cpu data since there is no previous measurement
+            // to use in the calculation so bars_max will be 0
             return;
         }
         let (available, total) = get_mem_info();
 
-        /*  available_length == the length the spaces takes up in this case:
-         *  |********       | 50%
-         */
+        //  available_length == the length the spaces takes up in this case:
+        //  |********       | 50%
         let available_length = ((available as f64 / total as f64) * (bars_max * 8) as f64) as usize;
-        /*  mem_bar length == the length the asterisks takes up in this case:
-         *  |********       | 50%
-         */
+        //  mem_bar length == the length the asterisks takes up in this case:
+        //  |********       | 50%
         let mem_bar_length = bars_max * 8 - available_length;
         let mem_display = format!(
             "RAM {}/{}",
             Bytes((total - available) * 1024).as_convenient_string(),
             Bytes(total * 1024).as_convenient_string()
         );
-        /* Put the "RAM XGB/YGB" in the middle of the RAM bar */
+        // Put the "RAM XGB/YGB" in the middle of the RAM bar
         let mem_display_padding = bars_max.saturating_sub(mem_display.len()) / 2;
 
         let y_offset = 2 + MAX_CPU_ROWS;
@@ -369,7 +371,7 @@ impl Component for KernelMetrics {
             self.dirty = false;
         }
 
-        /* Draw uptime */
+        // Draw uptime
         let mut file = File::open("/proc/uptime").expect(crate::PROC_FS_ERROR_STR);
         self.uptime.clear();
         file.read_to_string(&mut self.uptime).unwrap();
@@ -406,9 +408,9 @@ impl Component for KernelMetrics {
         }
         let old_cpu_stat = self.cpu_stat[0];
 
-        /* Draw CPU usage bars */
+        // Draw CPU usage bars
 
-        /* max width of cpu bar area */
+        // max width of cpu bar area
         let bars_max = (0.6 * total_cols as f32) as usize;
         let cpu_widget_width = self.draw_cpu_bars(
             grid,
@@ -417,14 +419,14 @@ impl Component for KernelMetrics {
                 pos_inc(upper_left, (bars_max + 1, MAX_CPU_ROWS + 1)),
             ),
         );
-        /* Draw RAM usage bar */
+        // Draw RAM usage bar
 
         self.draw_ram_bar(grid, area, cpu_widget_width.saturating_sub(2));
-        /* Various values table */
-        /* max width of cpu bar area */
+        // Various values table
+        // max width of cpu bar area
         let bars_max = (0.6 * total_cols as f32) as usize;
 
-        /* CPU Times */
+        // CPU Times
         let mut cpu_column_width = "CPU".len();
         let upper_left = pos_inc(upper_left, (bars_max + 5, 2));
         clear_area(grid, (upper_left, bottom_right));
@@ -471,7 +473,7 @@ impl Component for KernelMetrics {
             cpu_column_width = std::cmp::max(tag.len() + s.len() + 4, cpu_column_width);
         }
 
-        /* Load average */
+        // Load average
         let upper_left = pos_inc(upper_left, (cpu_column_width + 3, 0));
         if get_x(upper_left) >= get_x(bottom_right) {
             return;
@@ -512,11 +514,8 @@ impl Component for KernelMetrics {
     }
 
     fn process_event(&mut self, event: &mut UIEvent, _ui_mode: &mut UIMode) {
-        match event {
-            UIEvent::Resize => {
-                self.dirty = true;
-            }
-            _ => {}
+        if let UIEvent::Resize = event {
+            self.dirty = true;
         }
     }
 
@@ -538,11 +537,10 @@ fn get_mem_info() -> (usize, usize) {
     let mut counter = 0;
     for line in res.lines() {
         if line.starts_with("MemTotal") {
-            mem_total = usize::from_str(line.split_whitespace().skip(1).next().unwrap()).unwrap();
+            mem_total = usize::from_str(line.split_whitespace().nth(1).unwrap()).unwrap();
             counter += 1;
         } else if line.starts_with("MemAvailable") {
-            mem_available =
-                usize::from_str(line.split_whitespace().skip(1).next().unwrap()).unwrap();
+            mem_available = usize::from_str(line.split_whitespace().nth(1).unwrap()).unwrap();
             counter += 1;
         }
 
@@ -605,17 +603,17 @@ fn get_cpu_times(
                 },
             ));
         };
-    };
+    }
 
-    /* user % */
+    // user %
     val!("user   ", user_time);
-    /* system % */
+    // system %
     val!("system ", system_time);
-    /* nice % */
+    // nice %
     val!("nice   ", nice_time);
-    /* idle % */
+    // idle %
     val!("idle   ", idle_time);
-    /* iowait % */
+    // iowait %
     val!("iowait ", iowait_time);
 
     ret

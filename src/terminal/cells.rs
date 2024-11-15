@@ -1,39 +1,38 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
 
-/*!
- Define a (x, y) point in the terminal display as a holder of a character, foreground/background
- colors and attributes.
-*/
+//! Define a (x, y) point in the terminal display as a holder of a character,
+//! foreground/background colors and attributes.
+
+use std::{
+    convert::From,
+    fmt,
+    ops::{Deref, DerefMut, Index, IndexMut},
+};
+
+use termion::color::{AnsiValue, Rgb as TermionRgb};
 
 use super::position::*;
 use crate::text_processing::wcwidth;
 
-use std::convert::From;
-use std::fmt;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
-use termion::color::{AnsiValue, Rgb as TermionRgb};
-
-/// In a scroll region up and down cursor movements shift the region vertically. The new lines are
-/// empty.
+/// In a scroll region up and down cursor movements shift the region vertically.
+/// The new lines are empty.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ScrollRegion {
     pub top: usize,
@@ -44,11 +43,12 @@ pub struct ScrollRegion {
 
 /// An array of `Cell`s that represents a terminal display.
 ///
-/// A `CellBuffer` is a two-dimensional array of `Cell`s, each pair of indices correspond to a
-/// single point on the underlying terminal.
+/// A `CellBuffer` is a two-dimensional array of `Cell`s, each pair of indices
+/// correspond to a single point on the underlying terminal.
 ///
-/// The first index, `Cellbuffer[y]`, corresponds to a row, and thus the y-axis. The second
-/// index, `Cellbuffer[y][x]`, corresponds to a column within a row and thus the x-axis.
+/// The first index, `Cellbuffer[y]`, corresponds to a row, and thus the y-axis.
+/// The second index, `Cellbuffer[y][x]`, corresponds to a column within a row
+/// and thus the x-axis.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CellBuffer {
     cols: usize,
@@ -79,8 +79,8 @@ impl CellBuffer {
         self.cols = new_cols;
     }
 
-    /// Constructs a new `CellBuffer` with the given number of columns and rows, using the given
-    /// `cell` as a blank.
+    /// Constructs a new `CellBuffer` with the given number of columns and rows,
+    /// using the given `cell` as a blank.
     pub fn new(cols: usize, rows: usize, cell: Cell) -> CellBuffer {
         CellBuffer {
             cols,
@@ -89,8 +89,8 @@ impl CellBuffer {
         }
     }
 
-    /// Resizes `CellBuffer` to the given number of rows and columns, using the given `Cell` as
-    /// a blank.
+    /// Resizes `CellBuffer` to the given number of rows and columns, using the
+    /// given `Cell` as a blank.
     pub fn resize(&mut self, newcols: usize, newrows: usize, blank: Cell) {
         let newlen = newcols * newrows;
         if self.buf.len() == newlen {
@@ -141,13 +141,12 @@ impl CellBuffer {
         }
     }
 
-    /// Returns a reference to the `Cell` at the given coordinates, or `None` if the index is out of
-    /// bounds.
+    /// Returns a reference to the `Cell` at the given coordinates, or `None` if
+    /// the index is out of bounds.
     ///
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut term = Terminal::new().unwrap();
     ///
     /// let a_cell = term.get(5, 5);
@@ -159,13 +158,12 @@ impl CellBuffer {
         }
     }
 
-    /// Returns a mutable reference to the `Cell` at the given coordinates, or `None` if the index
-    /// is out of bounds.
+    /// Returns a mutable reference to the `Cell` at the given coordinates, or
+    /// `None` if the index is out of bounds.
     ///
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut term = Terminal::new().unwrap();
     ///
     /// let a_mut_cell = term.get_mut(5, 5);
@@ -234,7 +232,6 @@ impl CellBuffer {
     ///  | 555555555555 |            | 666666666666 |
     ///  | 666666666666 |            |              |
     ///  ```
-    ///
     pub fn scroll_up(&mut self, scroll_region: &ScrollRegion, top: usize, offset: usize) {
         let l = scroll_region.left;
         let r = if scroll_region.right == 0 {
@@ -293,7 +290,6 @@ impl CellBuffer {
     ///  | 555555555555 |            | 444444444444 |
     ///  | 666666666666 |            | 555555555555 |
     ///  ```
-    ///
     pub fn scroll_down(&mut self, scroll_region: &ScrollRegion, top: usize, offset: usize) {
         for y in (scroll_region.bottom - offset + 1)..=scroll_region.bottom {
             for x in 0..self.size().0 {
@@ -367,7 +363,8 @@ impl IndexMut<Pos> for CellBuffer {
 }
 
 impl Default for CellBuffer {
-    /// Constructs a new `CellBuffer` with a size of `(0, 0)`, using the default `Cell` as a blank.
+    /// Constructs a new `CellBuffer` with a size of `(0, 0)`, using the default
+    /// `Cell` as a blank.
     fn default() -> CellBuffer {
         CellBuffer::new(0, 0, Cell::default())
     }
@@ -409,7 +406,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let cell = Cell::new('x', Color::Default, Color::Green, Attr::Default);
     /// assert_eq!(cell.ch(), 'x');
     /// assert_eq!(cell.fg(), Color::Default);
@@ -433,7 +429,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::with_char('x');
     /// assert_eq!(cell.ch(), 'x');
     /// assert_eq!(cell.fg(), Color::Default);
@@ -449,7 +444,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::with_style(Color::Default, Color::Red, Attr::Bold);
     /// assert_eq!(cell.fg(), Color::Default);
     /// assert_eq!(cell.bg(), Color::Red);
@@ -465,7 +459,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::with_char('x');
     /// assert_eq!(cell.ch(), 'x');
     /// ```
@@ -478,7 +471,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::with_char('x');
     /// assert_eq!(cell.ch(), 'x');
     ///
@@ -497,7 +489,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::with_style(Color::Blue, Color::Default, Attr::Default);
     /// assert_eq!(cell.fg(), Color::Blue);
     /// ```
@@ -510,7 +501,6 @@ impl Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::default();
     /// assert_eq!(cell.fg(), Color::Default);
     ///
@@ -563,8 +553,8 @@ impl Cell {
         self
     }
 
-    /// Set a `Cell` as empty when a previous cell spans multiple columns and it would
-    /// "overflow" to this cell.
+    /// Set a `Cell` as empty when a previous cell spans multiple columns and it
+    /// would "overflow" to this cell.
     pub fn empty(&self) -> bool {
         self.empty
     }
@@ -574,15 +564,15 @@ impl Cell {
         self
     }
 
-    /// Sets `keep_fg` field. If true, the foreground color will not be altered if attempted so
-    /// until the character content of the cell is changed.
+    /// Sets `keep_fg` field. If true, the foreground color will not be altered
+    /// if attempted so until the character content of the cell is changed.
     pub fn set_keep_fg(&mut self, new_val: bool) -> &mut Cell {
         self.keep_fg = new_val;
         self
     }
 
-    /// Sets `keep_bg` field. If true, the background color will not be altered if attempted so
-    /// until the character content of the cell is changed.
+    /// Sets `keep_bg` field. If true, the background color will not be altered
+    /// if attempted so until the character content of the cell is changed.
     pub fn set_keep_bg(&mut self, new_val: bool) -> &mut Cell {
         self.keep_bg = new_val;
         self
@@ -595,7 +585,6 @@ impl Default for Cell {
     /// # Examples
     ///
     /// ```norun
-    ///
     /// let mut cell = Cell::default();
     /// assert_eq!(cell.ch(), ' ');
     /// assert_eq!(cell.fg(), Color::Default);
@@ -610,16 +599,15 @@ impl Default for Cell {
 ///
 /// `Color::Default` represents the default color of the underlying terminal.
 ///
-/// The eight basic colors may be used directly and correspond to 0x00..0x07 in the 8-bit (256)
-/// color range; in addition, the eight basic colors coupled with `Attr::Bold` correspond to
-/// 0x08..0x0f in the 8-bit color range.
+/// The eight basic colors may be used directly and correspond to 0x00..0x07 in
+/// the 8-bit (256) color range; in addition, the eight basic colors coupled
+/// with `Attr::Bold` correspond to 0x08..0x0f in the 8-bit color range.
 ///
 /// `Color::Byte(..)` may be used to specify a color in the 8-bit range.
 ///
 /// # Examples
 ///
 /// ```norun
-///
 /// // The default color.
 /// let default = Color::Default;
 ///
@@ -632,7 +620,7 @@ impl Default for Cell {
 /// // Basic colors are also 8-bit colors (but not vice-versa).
 /// assert_eq!(red.as_byte(), fancy.as_byte())
 /// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Color {
     Black,
     Red,
@@ -644,6 +632,7 @@ pub enum Color {
     White,
     Byte(u8),
     Rgb(u8, u8, u8),
+    #[default]
     Default,
 }
 
@@ -714,12 +703,6 @@ impl Color {
     }
 }
 
-impl Default for Color {
-    fn default() -> Self {
-        Color::Default
-    }
-}
-
 /// The attributes of a `Cell`.
 ///
 /// `Attr` enumerates all combinations of attributes a given style may have.
@@ -729,7 +712,6 @@ impl Default for Color {
 /// # Examples
 ///
 /// ```norun
-///
 /// // Default attribute.
 /// let def = Attr::Default;
 ///
@@ -739,8 +721,9 @@ impl Default for Color {
 /// // Combination.
 /// let comb = Attr::UnderlineReverse;
 /// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Attr {
+    #[default]
     Default = 0b000,
     Bold = 0b001,
     Underline = 0b100,
@@ -791,12 +774,6 @@ impl core::ops::BitOrAssign for Attr {
             0b111 => BoldReverseUnderline,
             _ => unsafe { std::hint::unreachable_unchecked() },
         };
-    }
-}
-
-impl Default for Attr {
-    fn default() -> Self {
-        Attr::Default
     }
 }
 
@@ -861,7 +838,7 @@ pub fn copy_area_with_break(
                 src_y += 1;
                 src_x = 0;
                 if src_y >= get_y(bottom_right!(src)) {
-                    //clear_area(grid_dest, ((get_x(upper_left!(dest)), y), bottom_right!(dest)));
+                    // clear_area(grid_dest, ((get_x(upper_left!(dest)), y), bottom_right!(dest)));
                     ret.1 = y;
                     break 'y_;
                 }
@@ -910,7 +887,8 @@ macro_rules! inspect_bounds {
     };
 }
 
-/// Write an `&str` to a `CellBuffer` in a specified `Area` with the passed colors.
+/// Write an `&str` to a `CellBuffer` in a specified `Area` with the passed
+/// colors.
 pub fn write_string_to_grid(
     s: &str,
     grid: &mut CellBuffer,
@@ -955,12 +933,12 @@ pub fn write_string_to_grid(
 
         match wcwidth(u32::from(c)) {
             Some(0) | None => {
-                /* Skip drawing zero width characters */
+                // Skip drawing zero width characters
                 grid[(x, y)].empty = true;
             }
             Some(2) => {
-                /* Grapheme takes more than one column, so the next cell will be
-                 * drawn over. Set it as empty to skip drawing it. */
+                // Grapheme takes more than one column, so the next cell will be
+                // drawn over. Set it as empty to skip drawing it.
                 x += 1;
                 inspect_bounds!(grid, area, x, y, line_break);
                 grid[(x, y)] = Cell::default();
@@ -979,7 +957,8 @@ pub fn write_string_to_grid(
     (x, y)
 }
 
-/// Completely clear an `Area` with an empty char and the terminal's default colors.
+/// Completely clear an `Area` with an empty char and the terminal's default
+/// colors.
 pub fn clear_area(grid: &mut CellBuffer, area: Area) {
     if !is_valid_area!(area) {
         return;
@@ -991,10 +970,10 @@ pub fn clear_area(grid: &mut CellBuffer, area: Area) {
     }
 }
 
-/// Use `RowIterator` to iterate the cells of a row without the need to do any bounds checking;
-/// the iterator will simply return `None` when it reaches the end of the row.
-/// `RowIterator` can be created via the `CellBuffer::row_iter` method and can be returned by
-/// `BoundsIterator` which iterates each row.
+/// Use `RowIterator` to iterate the cells of a row without the need to do any
+/// bounds checking; the iterator will simply return `None` when it reaches the
+/// end of the row. `RowIterator` can be created via the `CellBuffer::row_iter`
+/// method and can be returned by `BoundsIterator` which iterates each row.
 /// ```norun
 /// for c in grid.row_iter(
 ///     x..(x + 11),

@@ -1,31 +1,30 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
+
+use std::{fmt, io};
+
+use termion::{
+    event::{Event as TermionEvent, Key as TermionKey},
+    input::TermRead,
+};
 
 use crate::crossbeam::*;
-
-use std::fmt;
-use std::io;
-use termion::event::Event as TermionEvent;
-use termion::event::Key as TermionKey;
-use termion::input::TermRead;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Key {
@@ -61,7 +60,8 @@ pub enum Key {
     Alt(char),
     /// Ctrl modified character.
     ///
-    /// Note that certain keys may not be modifiable with `ctrl`, due to limitations of terminals.
+    /// Note that certain keys may not be modifiable with `ctrl`, due to
+    /// limitations of terminals.
     Ctrl(char),
     /// Null byte.
     Null,
@@ -185,9 +185,7 @@ pub fn get_events(
     }
 }
 
-/*
- * CSI events we use
- */
+// CSI events we use
 
 // Some macros taken from termion:
 /// Create a CSI-introduced sequence.
@@ -237,11 +235,13 @@ pub const BRACKET_PASTE_START: &[u8] = b"\x1B[200~";
 pub const BRACKET_PASTE_END: &[u8] = b"\x1B[201~";
 
 derive_csi_sequence!(
-    #[doc = "`CSI Ps ; Ps ; Ps t`, where `Ps = 2 2 ; 0`  -> Save xterm icon and window title on stack."]
+    #[doc = "`CSI Ps ; Ps ; Ps t`, where `Ps = 2 2 ; 0`  -> Save xterm icon and window title on \
+             stack."]
     (SaveWindowTitleIconToStack, "22;0t")
 );
 
 derive_csi_sequence!(
-    #[doc = "Restore window title and icon from terminal's title stack. `CSI Ps ; Ps ; Ps t`, where `Ps = 2 3 ; 0`  -> Restore xterm icon and window title from stack."]
+    #[doc = "Restore window title and icon from terminal's title stack. `CSI Ps ; Ps ; Ps t`, \
+             where `Ps = 2 3 ; 0`  -> Restore xterm icon and window title from stack."]
     (RestoreWindowTitleIconFromStack, "23;0t")
 );

@@ -1,9 +1,10 @@
 const LINE_BREAK_TABLE_URL: &str = "http://www.unicode.org/Public/UCD/latest/ucd/LineBreak.txt";
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::BufReader;
-use std::path::PathBuf;
-use std::process::Command;
+use std::{
+    fs::File,
+    io::{prelude::*, BufReader},
+    path::PathBuf,
+    process::Command,
+};
 
 include!("src/text_processing/types.rs");
 
@@ -23,7 +24,7 @@ fn main() -> Result<(), std::io::Error> {
     );
     tmpdir_path.push("LineBreak.txt");
     Command::new("curl")
-        .args(&["-o", tmpdir_path.to_str().unwrap(), LINE_BREAK_TABLE_URL])
+        .args(["-o", tmpdir_path.to_str().unwrap(), LINE_BREAK_TABLE_URL])
         .output()?;
 
     let file = File::open(&tmpdir_path)?;
@@ -38,7 +39,8 @@ fn main() -> Result<(), std::io::Error> {
         let tokens: &str = line.split_whitespace().next().unwrap();
 
         let semicolon_idx: usize = tokens.chars().position(|c| c == ';').unwrap();
-        /* LineBreak.txt list is ascii encoded so we can assume each char takes one byte: */
+        // LineBreak.txt list is ascii encoded so we can assume each char takes one
+        // byte:
         let chars_str: &str = &tokens[..semicolon_idx];
 
         let mut codepoint_iter = chars_str.split("..");

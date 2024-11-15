@@ -1,32 +1,29 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
 
 extern crate unicode_segmentation;
-use self::unicode_segmentation::UnicodeSegmentation;
-use crate::text_processing::tables::LINE_BREAK_RULES;
-use crate::text_processing::types::LineBreakClass;
-use core::cmp::Ordering;
-use core::iter::Peekable;
-use core::str::FromStr;
+use core::{cmp::Ordering, iter::Peekable, str::FromStr};
+
 use LineBreakClass::*;
+
+use self::unicode_segmentation::UnicodeSegmentation;
+use crate::text_processing::{tables::LINE_BREAK_RULES, types::LineBreakClass};
 
 #[derive(Debug, PartialEq)]
 pub enum LineBreakCandidate {
@@ -41,7 +38,7 @@ pub struct LineBreakCandidateIter<'a> {
     text: &'a str,
     iter: Peekable<unicode_segmentation::GraphemeIndices<'a>>,
     pos: usize,
-    /* Needed for rule LB30a */
+    /// Needed for rule `LB30a`
     reg_ind_streak: u32,
 }
 
@@ -110,14 +107,32 @@ macro_rules! next_grapheme_class {
 /// Returns positions where breaks can happen
 /// Examples:
 /// ```
-/// use text_processing::{self, LineBreakCandidate::{self, *}};
-/// use text_processing::line_break::LineBreakCandidateIter;
+/// use text_processing::{
+///     self,
+///     line_break::LineBreakCandidateIter,
+///     LineBreakCandidate::{self, *},
+/// };
 ///
-/// assert!(LineBreakCandidateIter::new("").collect::<Vec<(usize, LineBreakCandidate)>>().is_empty());
-/// assert_eq!(&[(7, BreakAllowed), (12, MandatoryBreak)],
-///            LineBreakCandidateIter::new("Sample Text.").collect::<Vec<(usize, LineBreakCandidate)>>().as_slice());
-/// assert_eq!(&[(3, MandatoryBreak), (7, MandatoryBreak), (10, BreakAllowed), (17, MandatoryBreak)],
-///            LineBreakCandidateIter::new("Sa\nmp\r\nle T(e)xt.").collect::<Vec<(usize, LineBreakCandidate)>>().as_slice());
+/// assert!(LineBreakCandidateIter::new("")
+///     .collect::<Vec<(usize, LineBreakCandidate)>>()
+///     .is_empty());
+/// assert_eq!(
+///     &[(7, BreakAllowed), (12, MandatoryBreak)],
+///     LineBreakCandidateIter::new("Sample Text.")
+///         .collect::<Vec<(usize, LineBreakCandidate)>>()
+///         .as_slice()
+/// );
+/// assert_eq!(
+///     &[
+///         (3, MandatoryBreak),
+///         (7, MandatoryBreak),
+///         (10, BreakAllowed),
+///         (17, MandatoryBreak)
+///     ],
+///     LineBreakCandidateIter::new("Sa\nmp\r\nle T(e)xt.")
+///         .collect::<Vec<(usize, LineBreakCandidate)>>()
+///         .as_slice()
+/// );
 /// ```
 impl<'a> Iterator for LineBreakCandidateIter<'a> {
     type Item = (usize, LineBreakCandidate);
@@ -135,7 +150,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         let (idx, mut grapheme) = self.iter.next().unwrap();
         let LineBreakCandidateIter {
             ref mut iter,
-            ref text,
+            text,
             ref mut reg_ind_streak,
             ref mut pos,
         } = self;
@@ -155,22 +170,21 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             *reg_ind_streak = 0;
         }
 
-        /* LB1 Assign a line breaking class to each code point of the input. Resolve AI, CB, CJ,
-         * SA, SG, and XX into other line breaking classes depending on criteria outside the scope
-         * of this algorithm.
-         *
-         * In the absence of such criteria all characters with a specific combination of original
-         * class and General_Category property value are resolved as follows:
-         * Resolved Original     General_Category
-         * AL       AI, SG, XX   Any
-         * CM       SA           Only Mn or Mc
-         * AL       SA           Any except Mn and Mc
-         * NS       SJ           Any
-         */
+        // LB1 Assign a line breaking class to each code point of the input. Resolve
+        // AI, CB, CJ, SA, SG, and XX into other line breaking classes
+        // depending on criteria outside the scope of this algorithm.
+        //
+        // In the absence of such criteria all characters with a specific combination
+        // of original class and General_Category property value are resolved
+        // as follows: Resolved Original     General_Category
+        // AL       AI, SG, XX   Any
+        // CM       SA           Only Mn or Mc
+        // AL       SA           Any except Mn and Mc
+        // NS       SJ           Any
 
         // TODO: LB1
 
-        /* Check if next character class allows breaks before it */
+        // Check if next character class allows breaks before it
         let next_char: Option<&(usize, &str)> = iter.peek();
 
         match class {
@@ -195,13 +209,13 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         if let Some((_, next_grapheme)) = next_char {
             let next_class = get_class!(next_grapheme);
             match next_class {
-                /* LB6 Do not break before hard line breaks.  × ( BK | CR | LF | NL ) */
+                // LB6 Do not break before hard line breaks.  × ( BK | CR | LF | NL )
                 BK | CR | LF | NL => {
                     *pos += grapheme.len();
                     return self.next();
                 }
-                /* LB7 Do not break before spaces or zero width
-                 * space. × SP × ZW */
+                // LB7 Do not break before spaces or zero width
+                // space. × SP × ZW
                 SP | ZW => {
                     *pos += grapheme.len();
                     return self.next();
@@ -211,8 +225,8 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         }
         match class {
             ZW => {
-                // LB8 Break before any character following a zero-width space, even if one or more
-                // spaces intervene
+                // LB8 Break before any character following a zero-width space, even if one or
+                // more spaces intervene
                 // ZW SP* ÷
                 *pos += grapheme.len();
                 while Some(SP) == next_grapheme_class!(iter, grapheme) {
@@ -227,26 +241,27 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             }
 
             CM => {
-                // LB9 Do not break a combining character sequence; treat it as if it has the line
-                // breaking class of the base character in all of the following rules. Treat ZWJ as
-                // if it were CM.
+                // LB9 Do not break a combining character sequence; treat it as if it has the
+                // line breaking class of the base character in all of the
+                // following rules. Treat ZWJ as if it were CM.
                 // Treat X (CM | ZWJ)* as if it were X.
                 // where X is any line break class except BK, CR, LF, NL, SP, or ZW.
 
-                /* Unreachable since we break lines based on graphemes, not characters */
+                // Unreachable since we break lines based on graphemes, not characters
                 unreachable!();
             }
             WJ => {
-                /*: LB11 Do not break before or after Word joiner and related characters.*/
+                // : LB11 Do not break before or after Word joiner and related characters.
                 *pos += grapheme.len();
-                /* Get next grapheme */
+                // Get next grapheme
                 if next_grapheme_class!(iter, grapheme).is_some() {
                     *pos += grapheme.len();
                 }
                 return self.next();
             }
             GL => {
-                /*LB12 Non-breaking characters: LB12 Do not break after NBSP and related characters.*/
+                // LB12 Non-breaking characters: LB12 Do not break after NBSP and related
+                // characters.
                 *pos += grapheme.len();
                 return self.next();
             }
@@ -256,13 +271,13 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             let next_class = get_class!(next_grapheme);
             match next_class {
                 GL if ![SP, BA, HY].contains(&class) => {
-                    /* LB12a Do not break before NBSP and related characters, except after spaces and
-                     * hyphens.  [^SP BA HY] × GL
-                     * Also LB12 Do not break after NBSP and related characters */
+                    // LB12a Do not break before NBSP and related characters, except after spaces
+                    // and hyphens.  [^SP BA HY] × GL
+                    // Also LB12 Do not break after NBSP and related characters
                     *pos += grapheme.len();
                     return self.next();
                 }
-                /* LB13 Do not break before ‘]’ or ‘!’ or ‘;’ or ‘/’, even after spaces. */
+                // LB13 Do not break before ‘]’ or ‘!’ or ‘;’ or ‘/’, even after spaces.
                 CL | CP | EX | IS | SY => {
                     *pos = *next_idx;
                     return self.next();
@@ -272,7 +287,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         }
 
         match class {
-            /* LB13 Do not break before ‘]’ or ‘!’ or ‘;’ or ‘/’, even after spaces. */
+            // LB13 Do not break before ‘]’ or ‘!’ or ‘;’ or ‘/’, even after spaces.
             SP if [CL, CP, EX, IS, SY].contains(&get_class!(text[idx..].trim_start())) => {
                 *pos += grapheme.len();
                 while ![CL, CP, EX, IS, SY].contains(&next_grapheme_class!(iter, grapheme).unwrap())
@@ -286,7 +301,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
                 /* LB14 Do not break after ‘[’, even after spaces.
                  * OP SP* ×
                  */
-                while let Some((idx, grapheme)) = self.iter.next() {
+                for (idx, grapheme) in self.iter.by_ref() {
                     *pos = idx + grapheme.len();
                     if !(get_class!(grapheme) == SP) {
                         break;
@@ -305,7 +320,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
                 return self.next();
             }
             QU => {
-                /* LB19 Do not break before or after quotation marks, such as ‘ ” ’. */
+                // LB19 Do not break before or after quotation marks, such as ‘ ” ’.
                 *pos += grapheme.len();
                 if let Some((_, g)) = self.iter.next() {
                     *pos += g.len();
@@ -315,8 +330,8 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             LineBreakClass::CL | LineBreakClass::CP
                 if get_class!(text[idx..].trim_start()) == NS =>
             {
-                /* LB16 Do not break between closing punctuation and a nonstarter (lb=NS), even with
-                 * intervening spaces.
+                /* LB16 Do not break between closing punctuation and a nonstarter (lb=NS),
+                 * even with intervening spaces.
                  * (CL | CP) SP* × NS */
                 *pos += grapheme.len();
                 while Some(SP) == next_grapheme_class!(iter, grapheme) {
@@ -332,7 +347,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
                 return self.next();
             }
             SP => {
-                /* LB18 Break after spaces.  SP ÷ */
+                // LB18 Break after spaces.  SP ÷
                 // Space 0x20 is 1 byte long.
                 *pos += 1;
                 return Some((*pos, BreakAllowed));
@@ -343,7 +358,7 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             let next_class = get_class!(next_grapheme);
             match next_class {
                 QU if class != SP => {
-                    /* LB19 Do not break before or after quotation marks, such as ‘ ” ’. */
+                    // LB19 Do not break before or after quotation marks, such as ‘ ” ’.
                     *pos = *next_idx + next_grapheme.len();
                     self.iter.next();
                     return self.next();
@@ -353,12 +368,12 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         }
         match class {
             CB => {
-                /* LB20 Break before and after unresolved CB. */
+                // LB20 Break before and after unresolved CB.
                 *pos += grapheme.len();
                 return Some((*pos - 1, BreakAllowed));
             }
-            /* LB21 Do not break before hyphen-minus, other hyphens, fixed-width spaces, small
-             * kana, and other non-starters, or after acute accents.  × BA,  × HY, × NS,  BB × */
+            // LB21 Do not break before hyphen-minus, other hyphens, fixed-width spaces, small
+            // kana, and other non-starters, or after acute accents.  × BA,  × HY, × NS,  BB ×
             BB => {
                 *pos += grapheme.len();
                 return self.next();
@@ -370,8 +385,9 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
             let next_class = get_class!(next_grapheme);
             match next_class {
                 BA | HY | NS => {
-                    /* LB21 Do not break before hyphen-minus, other hyphens, fixed-width spaces, small
-                     * kana, and other non-starters, or after acute accents.  × BA,  × HY, × NS,  BB × */
+                    // LB21 Do not break before hyphen-minus, other hyphens, fixed-width spaces,
+                    // small kana, and other non-starters, or after acute
+                    // accents.  × BA,  × HY, × NS,  BB ×
                     *pos += grapheme.len();
                     return self.next();
                 }
@@ -380,300 +396,300 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
         }
         match class {
             HL if next_grapheme_class!((next_char is HY, BA)) => {
-                /* LB21a Don’t break after Hebrew + Hyphen.  HL (HY | BA) × */
+                // LB21a Don’t break after Hebrew + Hyphen.  HL (HY | BA) ×
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB21b Don’t break between ,Solidus and Hebrew letters.  SY × HL */
+            // LB21b Don’t break between ,Solidus and Hebrew letters.  SY × HL
             SY if next_grapheme_class!((next_char is HL)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
-                /* bypass next_char */
+                // bypass next_char
                 self.iter.next().unwrap();
                 if let Some((idx, next_grapheme)) = self.iter.next() {
                     *pos = idx + next_grapheme.len();
                 }
-                return self.next();
+                self.next()
             }
-            /*  LB22 Do not break between two ellipses, or between letters, numbers or excla-
-             *  mations and ellipsis.
-             *  Examples: ‘9...’, ‘a...’, ‘H...’
-             *  (AL | HL) × IN */
+            //  LB22 Do not break between two ellipses, or between letters, numbers or excla-
+            //  mations and ellipsis.
+            //  Examples: ‘9...’, ‘a...’, ‘H...’
+            //  (AL | HL) × IN
             AL | HL if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /*  EX × IN */
+            // EX × IN
             EX if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
             EX => {
                 // LB13
                 *pos += grapheme.len();
-                return self.next();
+                self.next()
             }
-            /*  (ID | EB | EM) × IN */
+            // (ID | EB | EM) × IN
             ID | EB | EM if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /*  IN × IN */
+            // IN × IN
             IN if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /*  NU × IN */
+            // NU × IN
             NU if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB23 Do not break between digits and letters.
-             * (AL | HL) × NU */
+            // LB23 Do not break between digits and letters.
+            // (AL | HL) × NU
             AL | HL if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* NU × (AL | HL) */
+            // NU × (AL | HL)
             NU if next_grapheme_class!((next_char is AL, HL)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB23a Do not break between numeric prefixes and ideographs, or between ideographs
-             * and numeric postfixes.
-             * PR × (ID | EB | EM) */
+            // LB23a Do not break between numeric prefixes and ideographs, or between ideographs
+            // and numeric postfixes.
+            // PR × (ID | EB | EM)
             PR if next_grapheme_class!((next_char is ID, EB, EM)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* (ID | EB | EM) × PO */
+            // (ID | EB | EM) × PO
             ID | EB | EM if next_grapheme_class!((next_char is PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* B24 Do not break between numeric prefix/postfix and letters, or between
-            letters and prefix/postfix.
-            (PR | PO) × (AL | HL)*/
+            // B24 Do not break between numeric prefix/postfix and letters, or between
+            // letters and prefix/postfix.
+            // (PR | PO) × (AL | HL)
             PR | PO if next_grapheme_class!((next_char is AL, HL)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /*(AL | HL) × (PR | PO) */
+            // (AL | HL) × (PR | PO)
             AL | HL if next_grapheme_class!((next_char is PR, PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB25 Do not break between the following pairs of classes relevant to numbers:
-             * CL × PO */
+            // LB25 Do not break between the following pairs of classes relevant to numbers:
+            // CL × PO
             CL if next_grapheme_class!((next_char is PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* CP × PO */
+            // CP × PO
             CP if next_grapheme_class!((next_char is PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* CL × PR */
+            // CL × PR
             CL if next_grapheme_class!((next_char is PR)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* CP × PR */
+            // CP × PR
             CP if next_grapheme_class!((next_char is PR)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* NU × PO */
+            // NU × PO
             NU if next_grapheme_class!((next_char is PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* NU × PR */
+            // NU × PR
             NU if next_grapheme_class!((next_char is PR)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* PO × OP */
+            // PO × OP
             PO if next_grapheme_class!((next_char is OP)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* PO × NU */
+            // PO × NU
             PO if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* PR × OP */
+            // PR × OP
             PR if next_grapheme_class!((next_char is OP)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* PR × NU */
+            // PR × NU
             PR if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* HY × NU */
+            // HY × NU
             HY if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* IS × NU */
+            // IS × NU
             IS if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* NU × NU */
+            // NU × NU
             NU if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* SY × NU */
+            // SY × NU
             SY if next_grapheme_class!((next_char is NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB26 Do not break a Korean syllable.
-             * JL × (JL | JV | H2 | H3) */
+            // LB26 Do not break a Korean syllable.
+            // JL × (JL | JV | H2 | H3)
             JL if next_grapheme_class!((next_char is JL, JV, H2, H3)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* (JV | H2) × (JV | JT) */
+            // (JV | H2) × (JV | JT)
             JV | H2 if next_grapheme_class!((next_char is JV, JT)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* (JT | H3) × JT */
+            // (JT | H3) × JT
             JT | H3 if next_grapheme_class!((next_char is JT)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB27 Treat a Korean Syllable Block the same as ID.
-             * (JL | JV | JT | H2 | H3) × IN */
+            // LB27 Treat a Korean Syllable Block the same as ID.
+            // (JL | JV | JT | H2 | H3) × IN
             JL | JV | JT | H2 | H3 if next_grapheme_class!((next_char is IN)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* (JL | JV | JT | H2 | H3) × PO */
+            // (JL | JV | JT | H2 | H3) × PO
             JL | JV | JT | H2 | H3 if next_grapheme_class!((next_char is PO)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* PR × (JL | JV | JT | H2 | H3) */
+            // PR × (JL | JV | JT | H2 | H3)
             PR if next_grapheme_class!((next_char is JL, JV, JT, H2, H3)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB28 Do not break between alphabetics (“at”).
-            (AL | HL) × (AL | HL) */
+            // LB28 Do not break between alphabetics (“at”).
+            // (AL | HL) × (AL | HL)
             AL | HL if next_grapheme_class!((next_char is AL, HL)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB29 Do not break between numeric punctuation and alphabetics (“e.g.”).
-            IS × (AL | HL) */
+            // LB29 Do not break between numeric punctuation and alphabetics (“e.g.”).
+            // IS × (AL | HL)
             IS if next_grapheme_class!((next_char is AL, HL)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* LB30 Do not break between letters, numbers, or ordinary symbols and opening
-            or closing parentheses.
-            (AL | HL | NU) × OP */
+            // LB30 Do not break between letters, numbers, or ordinary symbols and opening
+            // or closing parentheses.
+            // (AL | HL | NU) × OP
             AL | HL | NU if next_grapheme_class!((next_char is OP)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /* CP × (AL | HL | NU) */
+            // CP × (AL | HL | NU)
             CP if next_grapheme_class!((next_char is AL, HL , NU)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
-            /*LB30b Do not break between an emoji base and an emoji modifier.
-             * EB × EM */
+            // LB30b Do not break between an emoji base and an emoji modifier.
+            // EB × EM
             EB if next_grapheme_class!((next_char is EM)) => {
                 let (idx, next_grapheme) = next_char.unwrap();
                 *pos = idx + next_grapheme.len();
                 self.iter.next();
-                return self.next();
+                self.next()
             }
             RI => {
-                /* LB30a Break between two regional indicator symbols if and only if there are an
-                 * even number of regional indicators preceding the position of the break.
-                 * sot (RI RI)* RI × RI
+                /* LB30a Break between two regional indicator symbols if and only if there
+                 * are an even number of regional indicators preceding the
+                 * position of the break. sot (RI RI)* RI × RI
                  * [^RI] (RI RI)* RI × RI */
                 *reg_ind_streak += 1;
                 *pos += grapheme.len();
@@ -681,11 +697,11 @@ impl<'a> Iterator for LineBreakCandidateIter<'a> {
                     return Some((*pos - grapheme.len(), BreakAllowed));
                 }
                 self.iter.next();
-                return self.next();
+                self.next()
             }
             _ => {
                 *pos += grapheme.len();
-                return Some((*pos - grapheme.len(), BreakAllowed));
+                Some((*pos - grapheme.len(), BreakAllowed))
             }
         }
     }

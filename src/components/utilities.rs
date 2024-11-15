@@ -1,35 +1,34 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
 
-/*! Various useful components that can be used in a generic fashion.
- */
+//! Various useful utilities
+
 extern crate cassowary;
-use super::*;
-use std::fs::File;
-use std::io::prelude::*;
-use std::str::FromStr;
+use std::{fs::File, io::prelude::*, str::FromStr};
 
-use cassowary::strength::{REQUIRED, STRONG, WEAK};
-use cassowary::WeightedRelation::*;
-use cassowary::{Solver, Variable};
+use cassowary::{
+    strength::{REQUIRED, STRONG, WEAK},
+    Solver, Variable,
+    WeightedRelation::*,
+};
+
+use super::*;
 
 #[derive(Debug)]
 pub enum PageMovement {
@@ -125,16 +124,16 @@ pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
 
         let mut mut_value_iter = line.split_whitespace().skip(1);
 
-        let user_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let nice_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let system_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let idle_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let iowait_time = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let irq = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let soft_irq = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let steal = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let guest = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
-        let guest_nice = usize::from_str(&mut_value_iter.next().unwrap()).unwrap();
+        let user_time = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let nice_time = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let system_time = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let idle_time = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let iowait_time = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let irq = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let soft_irq = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let steal = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let guest = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
+        let guest_nice = usize::from_str(mut_value_iter.next().unwrap()).unwrap();
         ret.push(Stat {
             user_time,
             system_time,
@@ -151,7 +150,7 @@ pub fn get_stat(boot_time: &mut usize) -> Vec<Stat> {
     while !line.starts_with("btime") {
         line = lines_iter.next().unwrap();
     }
-    *boot_time = usize::from_str(&line.split_whitespace().skip(1).next().unwrap()).unwrap();
+    *boot_time = usize::from_str(line.split_whitespace().nth(1).unwrap()).unwrap();
 
     ret
 }
@@ -216,10 +215,10 @@ impl Component for Window {
                 top_bars.top | LE(REQUIRED) | top_bars.bottom,
                 list.top | LE(REQUIRED) | list.bottom,
                 // preferred heights:
-                top_bars.bottom - top_bars.top | GE(REQUIRED) | 6.0,
-                top_bars.bottom - top_bars.top | EQ(WEAK) | 8.0,
-                top_bars.bottom - top_bars.top | LE(REQUIRED) | 8.0,
-                list.bottom - list.top | GE(REQUIRED) | 11.0,
+                (top_bars.bottom - top_bars.top) | GE(REQUIRED) | 6.0,
+                (top_bars.bottom - top_bars.top) | EQ(WEAK) | 8.0,
+                (top_bars.bottom - top_bars.top) | LE(REQUIRED) | 8.0,
+                (list.bottom - list.top) | GE(REQUIRED) | 11.0,
             ])
             .unwrap();
 
@@ -268,7 +267,7 @@ impl Component for Window {
 
     fn get_shortcuts(&self) -> ShortcutMaps {
         let mut top_bars_map = self.top_bars.get_shortcuts();
-        top_bars_map.extend(self.list.get_shortcuts().into_iter());
+        top_bars_map.extend(self.list.get_shortcuts());
         top_bars_map
     }
 }

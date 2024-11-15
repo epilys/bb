@@ -1,30 +1,32 @@
-/*
- * bb
- *
- * Copyright 2019 Manos Pitsidianakis
- *
- * This file is part of bb.
- *
- * bb is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * bb is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bb. If not, see <http://www.gnu.org/licenses/>.
- */
+// bb
+//
+// Copyright 2019 Manos Pitsidianakis
+//
+// This file is part of bb.
+//
+// bb is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// bb is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with bb. If not, see <http://www.gnu.org/licenses/>.
+
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::prelude::*,
+    path::PathBuf,
+    str::FromStr,
+};
 
 use super::*;
-use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::PathBuf;
-use std::str::FromStr;
+
 #[derive(Debug)]
 pub struct ProcessData {
     cpu_stat: Stat,
@@ -36,7 +38,7 @@ pub struct ProcessData {
     tree: Vec<(usize, Pid)>,
 }
 
-const SIGNAL_LIST: &[(i32, &'static str)] = &[
+const SIGNAL_LIST: &[(i32, &str)] = &[
     (1, "1 HUP"),
     (2, "2 INT"),
     (3, "3 QUIT"),
@@ -70,14 +72,14 @@ const SIGNAL_LIST: &[(i32, &'static str)] = &[
     (31, "31 SYS"),
 ];
 
-//const ARROW_UP: &str = "↑";
-//const ARROW_DOWN: &str = "↓";
-//const ARROW_UP: &str = "▲";
-//const ARROW_DOWN: &str = "▼";
+// const ARROW_UP: &str = "↑";
+// const ARROW_DOWN: &str = "↓";
+// const ARROW_UP: &str = "▲";
+// const ARROW_DOWN: &str = "▼";
 const ARROW_UP: &str = "🠉";
 const ARROW_DOWN: &str = "🠋";
 
-/* Hold maximum width for each column */
+/// Hold maximum width for each column
 #[derive(Debug)]
 pub struct ColumnWidthMaxima {
     pid: usize,
@@ -111,6 +113,11 @@ macro_rules! define_column_string {
               #[allow(dead_code)]
               pub fn len(&self) -> usize {
                   self.0.len()
+              }
+
+              #[allow(dead_code)]
+              pub fn is_empty(&self) -> bool {
+                  self.0.len() == 0
               }
           }
 
@@ -148,7 +155,7 @@ enum Sort {
     CmdLineDesc,
 }
 
-/* Wrapper type for display strings */
+/// Wrapper type for display strings
 #[derive(Debug)]
 pub struct ProcessDisplay {
     pub i: Pid,
@@ -165,31 +172,29 @@ pub struct ProcessDisplay {
     pub is_thread: bool,
 }
 
-/* process list components */
+/// Process list component
 #[derive(Debug)]
 pub struct ProcessList {
     page_movement: Option<PageMovement>,
-    cpu_stat: Stat,
     data: ProcessData,
     cursor: usize,
     height: usize,
     dirty: bool,
     force_redraw: bool,
     maxima: ColumnWidthMaxima,
-    /* stop updating data */
+    /// stop updating data
     freeze: bool,
     draw_tree: bool,
     draw_help: bool,
-    processes_times: HashMap<Pid, usize>,
-    threads_times: HashMap<Pid, usize>,
     processes: Vec<ProcessDisplay>,
     sort: Sort,
     mode: FunctionModes,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 enum Input {
     Active,
+    #[default]
     Inactive,
 }
 
@@ -205,11 +210,6 @@ impl Input {
     }
 }
 
-impl Default for Input {
-    fn default() -> Self {
-        Inactive
-    }
-}
 use Input::*;
 
 const FOLLOW_ACTIVE: u8 = 0x01;
@@ -223,7 +223,9 @@ const FILTER_ACTIVE: u8 = 0x40;
 struct FunctionModes {
     follow: Pid,
     locate: Pid,
-    search: (String, usize, usize, bool), /* (search term, current result y_offset, previous result offset, is cursor focused on results?) */
+    /// (search term, current result y_offset, previous result offset, is cursor
+    /// focused on results?)
+    search: (String, usize, usize, bool),
     kill: u16,
     filter: String,
     active: u8,
@@ -239,19 +241,19 @@ impl FunctionModes {
 
 #[derive(Debug, PartialEq)]
 pub enum State {
-    /* Z  Zombie */
+    /// `Z`  Zombie
     Zombie,
-    /* R  Running */
+    /// `R`  Running
     Running,
-    /* S  Sleeping in an interruptible wait */
+    /// `S`  Sleeping in an interruptible wait
     Sleeping,
-    /* D  Waiting in uninterruptible disk sleep */
+    /// `D`  Waiting in uninterruptible disk sleep
     Waiting,
-    /* T  Stopped (on a signal) or (before Linux 2.6.33) trace stopped */
+    /// `T`  Stopped (on a signal) or (before Linux 2.6.33) trace stopped
     Stopped,
-    /* t  Tracing stop (Linux 2.6.33 onward) */
+    /// `t`  Tracing stop (Linux 2.6.33 onward)
     Tracing,
-    /* X  Dead (from Linux 2.6.0 onward) */
+    /// `X`  Dead (from Linux 2.6.0 onward)
     Dead,
 }
 
@@ -306,6 +308,12 @@ impl fmt::Display for ProcessList {
     }
 }
 
+impl Default for ProcessList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessList {
     pub fn new() -> Self {
         let data = ProcessData {
@@ -320,11 +328,8 @@ impl ProcessList {
         ProcessList {
             cursor: 0,
             page_movement: None,
-            cpu_stat: get_stat(&mut 0).remove(0),
             data,
             processes: Vec::with_capacity(1024),
-            processes_times: Default::default(),
-            threads_times: Default::default(),
             height: 0,
             maxima: ColumnWidthMaxima::new(),
             freeze: false,
@@ -384,8 +389,7 @@ impl ProcessList {
             .map(|(k, v)| (*k, v))
             .collect::<Vec<(&str, &Key)>>();
         shortcuts.sort_by_key(|s| s.0);
-        let mut y = 0;
-        for (k, v) in shortcuts.iter() {
+        for (y, (k, v)) in shortcuts.iter().enumerate() {
             write_string_to_grid(
                 &format!("{k:>max_key$} {v}", k = k, v = v, max_key = max_key),
                 grid,
@@ -393,12 +397,11 @@ impl ProcessList {
                 Color::Default,
                 Attr::Default,
                 (
-                    pos_inc(upper_left!(box_area), (2, 4 + y)),
+                    pos_inc(upper_left!(box_area), (2, y + 4)),
                     bottom_right!(box_area),
                 ),
                 None,
             );
-            y += 1;
         }
         let box_area = (
             (margin_left, margin_top + 13),
@@ -448,20 +451,23 @@ impl ProcessList {
             let p = &self.processes[self.data.processes_index[pid]];
             if self.mode.is_active(SEARCH_ACTIVE) {
                 let (ref search, ref mut n, ref mut n_prev, is_cursor_focused) = self.mode.search;
-                if (*n != *n_prev || tick) && is_cursor_focused {
-                    if !stop_search && search.len() > 1 && p.cmd_line.0.contains(search) {
-                        if search_results == *n {
-                            let i = y_offset;
-                            pages = i / height;
-                            self.cursor = i;
-                            stop_search = true;
-                            *n_prev = *n;
-                        } else {
-                            search_results += 1;
-                        }
-                        if search_results < *n {
-                            *n = search_results;
-                        }
+                if (*n != *n_prev || tick)
+                    && is_cursor_focused
+                    && !stop_search
+                    && search.len() > 1
+                    && p.cmd_line.0.contains(search)
+                {
+                    if search_results == *n {
+                        let i = y_offset;
+                        pages = i / height;
+                        self.cursor = i;
+                        stop_search = true;
+                        *n_prev = *n;
+                    } else {
+                        search_results += 1;
+                    }
+                    if search_results < *n {
+                        *n = search_results;
                     }
                 }
             }
@@ -472,7 +478,7 @@ impl ProcessList {
                         .data
                         .parents
                         .get(&p.p)
-                        .and_then(|v| Some(v.len() - 1))
+                        .map(|v| v.len() - 1)
                         .unwrap_or(0)
                 })
                 .unwrap_or(false);
@@ -492,16 +498,12 @@ impl ProcessList {
                 } else {
                     s.push(' ');
                 }
-                if i > 0 {}
                 s.push(' ');
             }
 
             if *ind > 0 || (has_sibling || is_first) {
                 if p.is_thread {
-                    if has_sibling && is_first {
-                        s.push(' ');
-                        s.push('┠');
-                    } else if has_sibling {
+                    if has_sibling {
                         s.push(' ');
                         s.push('┠');
                     } else {
@@ -510,10 +512,7 @@ impl ProcessList {
                     }
                     s.push('┄');
                 } else {
-                    if has_sibling && is_first {
-                        s.push(' ');
-                        s.push('┣');
-                    } else if has_sibling {
+                    if has_sibling {
                         s.push(' ');
                         s.push('┣');
                     } else {
@@ -568,8 +567,10 @@ impl ProcessList {
             match executable_path_color(&p.cmd_line) {
                 Ok((path, bin, rest)) => {
                     let (x, _) = write_string_to_grid(
-                            &format!(
-                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  {branches}",
+                        &format!(
+                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  \
+                             {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  \
+                             {state:>max_state$}  {branches}",
                             pid = p.pid,
                             ppid = p.ppid,
                             username = p.username,
@@ -583,13 +584,14 @@ impl ProcessList {
                             max_cpu_percent = self.maxima.cpu_percent,
                             max_state = self.maxima.state,
                             branches = s,
-                                ),
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            None,);
+                        ),
+                        grid,
+                        fg_color,
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                        None,
+                    );
                     if p.state == State::Running {
                         grid[pos_inc(
                             upper_left,
@@ -652,8 +654,10 @@ impl ProcessList {
                 }
                 Err((bin, rest)) => {
                     let (x, _) = write_string_to_grid(
-                            &format!(
-                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  {branches}",
+                        &format!(
+                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  \
+                             {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  \
+                             {state:>max_state$}  {branches}",
                             pid = p.pid,
                             ppid = p.ppid,
                             username = p.username,
@@ -667,13 +671,14 @@ impl ProcessList {
                             max_cpu_percent = self.maxima.cpu_percent,
                             max_state = self.maxima.state,
                             branches = s,
-                            ),
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            None,);
+                        ),
+                        grid,
+                        fg_color,
+                        bg_color,
+                        Attr::Default,
+                        (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                        None,
+                    );
                     if p.state == State::Running {
                         grid[pos_inc(
                             upper_left,
@@ -732,8 +737,8 @@ impl ProcessList {
     }
 }
 
-/* Prints the process list */
 impl Component for ProcessList {
+    /// Prints the process list
     fn draw(
         &mut self,
         grid: &mut CellBuffer,
@@ -753,7 +758,7 @@ impl Component for ProcessList {
         let mut upper_left = pos_inc(upper_left!(area), (1, 0));
         let bottom_right = pos_dec(bottom_right!(area), (1, 1));
 
-        /* Reserve first row for column headers */
+        // Reserve first row for column headers
         let height = height!(area)
             - 2
             - if self.mode.is_active(LOCATE_ACTIVE) {
@@ -809,7 +814,7 @@ impl Component for ProcessList {
             dirty_areas.push_back(area);
 
             if !self.freeze && update_maxima {
-                /* Keep tabs on biggest element in each column */
+                // Keep tabs on biggest element in each column
                 self.maxima = ColumnWidthMaxima::new();
 
                 for p in &self.processes {
@@ -871,34 +876,65 @@ impl Component for ProcessList {
                 None
             };
 
-            /* Write column headers */
+            // Write column headers
             let (x, y) = write_string_to_grid(
                 &format!(
-                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}{usernamesort} {vm_rss:>max_vm_rss$}{vmrsssort} {cpu_percent:>max_cpu_percent$}{cpusort} {state:>max_state$}  {cmd_line}{cmd_linesort}",
+                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}{usernamesort} \
+                     {vm_rss:>max_vm_rss$}{vmrsssort} {cpu_percent:>max_cpu_percent$}{cpusort} \
+                     {state:>max_state$}  {cmd_line}{cmd_linesort}",
                     pid = "PID",
-                    ppid ="PPID",
+                    ppid = "PPID",
                     username = "USER",
                     vm_rss = "VM_RSS",
                     cpu_percent = "  CPU%",
                     state = " ",
-                    cmd_line = if let Some(ref cmd_header) = cmd_header { &cmd_header } else { "CMD_LINE"} ,
+                    cmd_line = if let Some(ref cmd_header) = cmd_header {
+                        &cmd_header
+                    } else {
+                        "CMD_LINE"
+                    },
                     max_pid = self.maxima.pid,
                     max_ppid = self.maxima.ppid,
                     max_username = self.maxima.username,
                     max_vm_rss = self.maxima.vm_rss,
                     max_cpu_percent = self.maxima.cpu_percent,
                     max_state = self.maxima.state,
-                    usernamesort = if let Sort::UserAsc = self.sort { ARROW_UP } else if let Sort::UserDesc = self.sort { ARROW_DOWN } else { " " },
-                    vmrsssort = if let Sort::VmRssAsc = self.sort { ARROW_UP } else if let Sort::VmRssDesc = self.sort { ARROW_DOWN } else { " " },
-                    cpusort = if let Sort::CpuAsc = self.sort { ARROW_UP } else if let Sort::CpuDesc = self.sort { ARROW_DOWN } else { " " },
-                    cmd_linesort = if let Sort::CmdLineAsc = self.sort { ARROW_UP } else if let Sort::CmdLineDesc = self.sort { ARROW_DOWN } else { "" },
+                    usernamesort = if let Sort::UserAsc = self.sort {
+                        ARROW_UP
+                    } else if let Sort::UserDesc = self.sort {
+                        ARROW_DOWN
+                    } else {
+                        " "
+                    },
+                    vmrsssort = if let Sort::VmRssAsc = self.sort {
+                        ARROW_UP
+                    } else if let Sort::VmRssDesc = self.sort {
+                        ARROW_DOWN
+                    } else {
+                        " "
+                    },
+                    cpusort = if let Sort::CpuAsc = self.sort {
+                        ARROW_UP
+                    } else if let Sort::CpuDesc = self.sort {
+                        ARROW_DOWN
+                    } else {
+                        " "
+                    },
+                    cmd_linesort = if let Sort::CmdLineAsc = self.sort {
+                        ARROW_UP
+                    } else if let Sort::CmdLineDesc = self.sort {
+                        ARROW_DOWN
+                    } else {
+                        ""
+                    },
                 ),
                 grid,
                 Color::Black,
                 Color::White,
                 Attr::Default,
                 (pos_inc(upper_left, (0, 1)), bottom_right),
-                None,);
+                None,
+            );
             if self.mode.is_active(SEARCH_ACTIVE | FILTER_ACTIVE) && self.mode.input == Active {
                 grid[(x - 1, y)].set_fg(Color::White);
                 grid[(x - 1, y)].set_bg(Color::Black);
@@ -910,7 +946,7 @@ impl Component for ProcessList {
                 Some(Color::White),
             );
 
-            /* Write current selected status if any. eg. if list is frozen, show 'FROZEN'. */
+            // Write current selected status if any. eg. if list is frozen, show 'FROZEN'.
             {
                 let (mut x, y) = set_y(upper_left!(area), get_y(bottom_right) + 1);
                 if self.freeze {
@@ -1057,27 +1093,30 @@ impl Component for ProcessList {
                     match executable_path_color(&p.cmd_line) {
                         Ok((path, bin, rest)) => {
                             let (x, _) = write_string_to_grid(
-                            &format!(
-                    "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
-                            pid = p.pid,
-                            ppid = p.ppid,
-                            username = p.username,
-                            vm_rss = p.vm_rss,
-                            cpu_percent = (p.cpu_percent as f64 / 100.0),
-                            state = p.state,
-                            max_pid = self.maxima.pid,
-                            max_ppid = self.maxima.ppid,
-                            max_username = self.maxima.username,
-                            max_vm_rss = self.maxima.vm_rss,
-                            max_cpu_percent = self.maxima.cpu_percent,
-                            max_state = self.maxima.state,
+                                &format!(
+                                    "{pid:>max_pid$}  {ppid:>max_ppid$}  \
+                                     {username:>max_username$}  {vm_rss:>max_vm_rss$}  \
+                                     {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
+                                    pid = p.pid,
+                                    ppid = p.ppid,
+                                    username = p.username,
+                                    vm_rss = p.vm_rss,
+                                    cpu_percent = (p.cpu_percent as f64 / 100.0),
+                                    state = p.state,
+                                    max_pid = self.maxima.pid,
+                                    max_ppid = self.maxima.ppid,
+                                    max_username = self.maxima.username,
+                                    max_vm_rss = self.maxima.vm_rss,
+                                    max_cpu_percent = self.maxima.cpu_percent,
+                                    max_state = self.maxima.state,
                                 ),
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            None,);
+                                grid,
+                                fg_color,
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                                None,
+                            );
                             if p.state == State::Running {
                                 grid[pos_inc(
                                     upper_left,
@@ -1140,27 +1179,30 @@ impl Component for ProcessList {
                         }
                         Err((bin, rest)) => {
                             let (x, _) = write_string_to_grid(
-                            &format!(
-                            "{pid:>max_pid$}  {ppid:>max_ppid$}  {username:>max_username$}  {vm_rss:>max_vm_rss$}  {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
-                            pid = p.pid,
-                            ppid = p.ppid,
-                            username = p.username,
-                            vm_rss = p.vm_rss,
-                            cpu_percent = (p.cpu_percent as f64 / 100.0),
-                            state = p.state,
-                            max_pid = self.maxima.pid,
-                            max_ppid = self.maxima.ppid,
-                            max_username = self.maxima.username,
-                            max_vm_rss = self.maxima.vm_rss,
-                            max_cpu_percent = self.maxima.cpu_percent,
-                            max_state = self.maxima.state,
-                            ),
-                            grid,
-                            fg_color,
-                            bg_color,
-                            Attr::Default,
-                            (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
-                            None,);
+                                &format!(
+                                    "{pid:>max_pid$}  {ppid:>max_ppid$}  \
+                                     {username:>max_username$}  {vm_rss:>max_vm_rss$}  \
+                                     {cpu_percent:>max_cpu_percent$}%  {state:>max_state$}  ",
+                                    pid = p.pid,
+                                    ppid = p.ppid,
+                                    username = p.username,
+                                    vm_rss = p.vm_rss,
+                                    cpu_percent = (p.cpu_percent as f64 / 100.0),
+                                    state = p.state,
+                                    max_pid = self.maxima.pid,
+                                    max_ppid = self.maxima.ppid,
+                                    max_username = self.maxima.username,
+                                    max_vm_rss = self.maxima.vm_rss,
+                                    max_cpu_percent = self.maxima.cpu_percent,
+                                    max_state = self.maxima.state,
+                                ),
+                                grid,
+                                fg_color,
+                                bg_color,
+                                Attr::Default,
+                                (pos_inc(upper_left, (0, y_offset + 2)), bottom_right),
+                                None,
+                            );
                             if p.state == State::Running {
                                 grid[pos_inc(
                                     upper_left,
@@ -1302,46 +1344,44 @@ impl Component for ProcessList {
             change_colors(grid, old_area, None, Some(bg_color));
             dirty_areas.push_back(old_area);
             dirty_areas.push_back(new_area);
-        } else {
-            if self.mode.is_active(FOLLOW_ACTIVE) {
-                let pid = self.mode.follow;
-                let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
-                let (_, y) = write_string_to_grid(
-                    &info,
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (
-                        pos_inc(
-                            upper_left!(area),
-                            ((width / 2).saturating_sub(info.len() / 2), 1),
-                        ),
-                        bottom_right!(area),
+        } else if self.mode.is_active(FOLLOW_ACTIVE) {
+            let pid = self.mode.follow;
+            let info = format!("Following PID == {pid} || PPID == {pid}", pid = pid);
+            let (_, y) = write_string_to_grid(
+                &info,
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Bold,
+                (
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
                     ),
-                    None,
-                );
-                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
-            } else if self.mode.is_active(LOCATE_ACTIVE) {
-                let pid = self.mode.locate;
-                let info = format!("Highlighting PID == {pid}", pid = pid);
-                let (_, y) = write_string_to_grid(
-                    &info,
-                    grid,
-                    Color::Default,
-                    Color::Default,
-                    Attr::Bold,
-                    (
-                        pos_inc(
-                            upper_left!(area),
-                            ((width / 2).saturating_sub(info.len() / 2), 1),
-                        ),
-                        bottom_right!(area),
+                    bottom_right!(area),
+                ),
+                None,
+            );
+            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
+        } else if self.mode.is_active(LOCATE_ACTIVE) {
+            let pid = self.mode.locate;
+            let info = format!("Highlighting PID == {pid}", pid = pid);
+            let (_, y) = write_string_to_grid(
+                &info,
+                grid,
+                Color::Default,
+                Color::Default,
+                Attr::Bold,
+                (
+                    pos_inc(
+                        upper_left!(area),
+                        ((width / 2).saturating_sub(info.len() / 2), 1),
                     ),
-                    None,
-                );
-                dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
-            }
+                    bottom_right!(area),
+                ),
+                None,
+            );
+            dirty_areas.push_back((pos_inc(upper_left, (0, 1)), set_y(bottom_right, y)));
         }
 
         if self.mode.is_active(KILL_ACTIVE) {
@@ -1357,18 +1397,16 @@ impl Component for ProcessList {
             create_box(grid, box_area);
             let mut x = 1;
             for s in SIGNAL_LIST.chunks(11) {
-                let mut y = 0;
-                for sig in s {
+                for (y, sig) in s.iter().enumerate() {
                     write_string_to_grid(
                         sig.1,
                         grid,
                         Color::Default,
                         Color::Default,
                         Attr::Default,
-                        (pos_inc(upper_left!(box_area), (x, 1 + y)), bottom_right),
+                        (pos_inc(upper_left!(box_area), (x, y + 1)), bottom_right),
                         None,
                     );
-                    y += 1;
                 }
                 x += 11;
             }
@@ -1379,7 +1417,7 @@ impl Component for ProcessList {
             clear_area(grid, box_area);
             create_box(grid, box_area);
             let signal_fmt = if n == 0 {
-                format!("__")
+                "__".to_string()
             } else if n < 32 {
                 format!("{} [{}]", SIGNAL_LIST[n as usize - 1].1, n)
             } else {
@@ -1600,7 +1638,7 @@ impl Component for ProcessList {
                 self.force_redraw = true;
             }
             UIEvent::Input(k) if *k == map["cancel"] => {
-                /* layered cancelling */
+                // layered cancelling
                 if self.mode.is_active(HELP_ACTIVE) {
                     self.mode.active &= !HELP_ACTIVE;
                 } else if self.mode.is_active(KILL_ACTIVE) {
@@ -1641,14 +1679,14 @@ impl Component for ProcessList {
                     && f.is_numeric() =>
             {
                 if self.mode.is_active(KILL_ACTIVE) {
-                    let ref mut n = self.mode.kill;
+                    let n = &mut self.mode.kill;
                     if let Some(add) = (*n).checked_mul(10) {
                         *n = add
                             .checked_add(f.to_digit(10).unwrap() as u16)
                             .unwrap_or(*n);
                     }
                 } else {
-                    let ref mut p = self.mode.locate;
+                    let p = &mut self.mode.locate;
                     if let Some(add) = (*p).checked_mul(10) {
                         *p = add
                             .checked_add(f.to_digit(10).unwrap() as i32)
@@ -1660,7 +1698,7 @@ impl Component for ProcessList {
             UIEvent::Input(Key::Backspace) if self.mode.input == Active => {
                 if self.mode.is_active(KILL_ACTIVE) {
                     let n = &mut self.mode.kill;
-                    *n = *n / 10;
+                    *n /= 10;
                 } else if self.mode.is_active(SEARCH_ACTIVE) {
                     let (ref mut p, ref mut n, ref mut n_prev, _) = self.mode.search;
                     if p.is_empty() {
@@ -1673,7 +1711,7 @@ impl Component for ProcessList {
                     }
                 } else if self.mode.is_active(LOCATE_ACTIVE) {
                     let p = &mut self.mode.locate;
-                    *p = *p / 10;
+                    *p /= 10;
                 } else if self.mode.is_active(FILTER_ACTIVE) {
                     let filter = &mut self.mode.filter;
                     if filter.is_empty() {
@@ -1690,9 +1728,10 @@ impl Component for ProcessList {
             UIEvent::Input(Key::Char('\n'))
                 if self.mode.input == Active && self.mode.is_active(KILL_ACTIVE) =>
             {
-                let ref n = self.mode.kill;
-                use nix::sys::signal::kill;
+                let n = &self.mode.kill;
                 use std::convert::TryFrom;
+
+                use nix::sys::signal::kill;
 
                 kill(
                     nix::unistd::Pid::from_raw(self.get_pid_under_cursor(self.cursor)),
@@ -1721,7 +1760,7 @@ impl Component for ProcessList {
                         *n_prev = *n;
                         *n += 1;
                     } else {
-                        /* regain focus */
+                        // regain focus
                         *n_prev = *n + 1;
                         *is_cursor_focused = true;
                     }
@@ -1732,7 +1771,7 @@ impl Component for ProcessList {
                         *n_prev = *n;
                         *n = (*n).saturating_sub(1);
                     } else {
-                        /* regain focus */
+                        // regain focus
                         *n_prev = *n + 1;
                         *is_cursor_focused = true;
                     }
@@ -1798,15 +1837,13 @@ fn executable_path_color(p: &CmdLineString) -> Result<(&str, &str, &str), (&str,
                 Ok((path, rest, ""))
             }
         } else {
-            return Err(p.split_at(first_whitespace));
+            Err(p.split_at(first_whitespace))
         }
+    } else if let Some(path_end) = p.as_bytes().iter().rposition(|c| *c == b'/') {
+        let (path, bin) = p.split_at(path_end + 1);
+        Ok((path, bin, ""))
     } else {
-        if let Some(path_end) = p.as_bytes().iter().rposition(|c| *c == b'/') {
-            let (path, bin) = p.split_at(path_end + 1);
-            Ok((path, bin, ""))
-        } else {
-            return Err((p, ""));
-        }
+        Err((p, ""))
     }
 }
 
@@ -1849,7 +1886,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
         };
 
         if process.cmd_line.is_empty() {
-            /* This is a kernel thread, skip for now */
+            // This is a kernel thread, skip for now
             continue;
         }
 
@@ -1864,7 +1901,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
                 * (process.rtime
                     - processes_times
                         .get(&process.pid)
-                        .map(|v| *v)
+                        .copied()
                         .unwrap_or(process.rtime)) as f64)
                 / divisor) as usize,
             rtime: process.rtime,
@@ -1902,7 +1939,7 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
                     * (thread.rtime
                         - threads_times
                             .get(&thread.pid)
-                            .map(|v| *v)
+                            .copied()
                             .unwrap_or(thread.rtime)) as f64)
                     / divisor) as usize,
                 rtime: thread.rtime,
@@ -1980,10 +2017,9 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
     processes
 }
 
-/* Might return Error if process has disappeared
- * during the function's run */
+/// Returns error if process has disappeared during the function's run
 fn get_pid_info(mut path: PathBuf, thread: bool) -> Result<Process, std::io::Error> {
-    /* proc file structure can be found in man 5 proc.*/
+    // proc file structure can be found in man 5 proc.
     path.push("status");
     let mut file: File = File::open(&path)?;
     let mut res = String::with_capacity(2048);
@@ -2076,19 +2112,21 @@ fn get_pid_info(mut path: PathBuf, thread: bool) -> Result<Process, std::io::Err
     res.clear();
     file.read_to_string(&mut res)?;
     if !res.is_empty() {
-        /* values are separated by null bytes */
-        ret.cmd_line = format!("{}", res.split('\0').collect::<Vec<&str>>().join(" "));
+        // values are separated by null bytes
+        ret.cmd_line = res.split('\0').collect::<Vec<&str>>().join(" ").to_string();
     }
     path.pop();
     path.push("stat");
     let mut file: File = File::open(&path)?;
     res.clear();
     file.read_to_string(&mut res)?;
-    /* values are separated by whitespace and are in a specific order */
+    // values are separated by whitespace and are in a specific order
     if !res.is_empty() {
         let mut vals = res.split_whitespace().skip(13);
-        ret.rtime = err!(usize::from_str(none_err!(vals.next()))); /* utime */
-        ret.rtime += err!(usize::from_str(none_err!(vals.next()))); /* stime */
+        // utime
+        ret.rtime = err!(usize::from_str(none_err!(vals.next())));
+        // stime
+        ret.rtime += err!(usize::from_str(none_err!(vals.next())));
     }
     Ok(ret)
 }

@@ -444,7 +444,7 @@ impl Component for KernelMetrics {
         );
 
         for (i, (tag, s, fg_color, bg_color, attr)) in
-            get_cpu_times(&old_cpu_stat, &self.cpu_stat[0])
+            get_cpu_times(&old_cpu_stat, &self.cpu_stat[0], self.cpu_stat.len())
                 .into_iter()
                 .enumerate()
         {
@@ -565,15 +565,17 @@ fn get_loadavg() -> [String; 3] {
 fn get_cpu_times(
     old_cpu_stat: &Stat,
     cpu_stat: &Stat,
+    num_cores: usize,
 ) -> Vec<(&'static str, String, Color, Color, Attr)> {
     let mut ret = Vec::new();
 
     macro_rules! val {
         ($tag:literal, $field:tt) => {
-            let percent = (cpu_stat.$field.saturating_sub(old_cpu_stat.$field)) as f64
+            let mut percent = (cpu_stat.$field.saturating_sub(old_cpu_stat.$field)) as f64
                 / (cpu_stat
                     .total_time()
                     .saturating_sub(old_cpu_stat.total_time())) as f64;
+            percent = percent.min(num_cores as f64);
             let s = format!("{:.1}%", percent * 100.0);
             ret.push((
                 $tag,

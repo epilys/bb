@@ -1906,13 +1906,15 @@ fn get(data: &mut ProcessData, follow_pid: Option<Pid>, sort: Sort) -> Vec<Proce
             ppid: PpidString(process.ppid.to_string()),
             vm_rss: VmRssString(Bytes(process.vm_rss * 1024).as_convenient_string()),
             vm_rss_value: process.vm_rss * 1024,
-            cpu_percent: ((multiplier
-                * (process.rtime
-                    - processes_times
-                        .get(&process.pid)
-                        .copied()
-                        .unwrap_or(process.rtime)) as f64)
-                / divisor) as usize,
+            cpu_percent: (cpu_no * 10000).min(
+                ((multiplier
+                    * (process.rtime
+                        - processes_times
+                            .get(&process.pid)
+                            .copied()
+                            .unwrap_or(process.rtime)) as f64)
+                    / divisor) as usize,
+            ),
             rtime: process.rtime,
             state: process.state,
             cmd_line: CmdLineString(process.cmd_line),

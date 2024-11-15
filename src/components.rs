@@ -42,7 +42,7 @@ use super::{Key, UIEvent};
 // The upper and lower boundary char.  const HORZ_BOUNDARY: char = '─';
 /// The left and right boundary char.  const VERT_BOUNDARY: char = '│';
 
-pub type ShortcutMap = HashMap<&'static str, Key>;
+pub type ShortcutMap = HashMap<&'static str, (u8, Key)>;
 pub type ShortcutMaps = HashMap<String, ShortcutMap>;
 
 /// Types implementing this Trait can draw on the terminal and receive events.

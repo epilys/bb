@@ -386,10 +386,10 @@ impl ProcessList {
         let max_key = shortcuts_map.keys().map(|k| k.len()).max().unwrap();
         let mut shortcuts = shortcuts_map
             .iter()
-            .map(|(k, v)| (*k, v))
-            .collect::<Vec<(&str, &Key)>>();
-        shortcuts.sort_by_key(|s| s.0);
-        for (y, (k, v)) in shortcuts.iter().enumerate() {
+            .map(|(k, v)| (*k, (v.0, &v.1)))
+            .collect::<Vec<(&str, (u8, &Key))>>();
+        shortcuts.sort_by_key(|s| (s.1).0);
+        for (y, (k, (_, v))) in shortcuts.iter().enumerate() {
             write_string_to_grid(
                 &format!("{k:>max_key$} {v}", k = k, v = v, max_key = max_key),
                 grid,
@@ -1500,17 +1500,19 @@ impl Component for ProcessList {
                 self.mode.search.3 = false;
                 self.dirty = true;
             }
-            UIEvent::Input(Key::F(f)) => {
+            UIEvent::Input(Key::Char(col)) if col.is_ascii_digit() => {
                 use Sort::*;
-                self.sort = match (self.sort, f) {
-                    (Sort::UserAsc, 1) => UserDesc,
-                    (Sort::UserDesc, 1) | (_, 1) => UserAsc,
-                    (Sort::VmRssDesc, 2) => VmRssAsc,
-                    (Sort::VmRssAsc, 2) | (_, 2) => VmRssDesc,
-                    (Sort::CpuDesc, 3) => CpuAsc,
-                    (Sort::CpuAsc, 3) | (_, 3) => CpuDesc,
-                    (Sort::CmdLineDesc, 4) => CmdLineAsc,
-                    (Sort::CmdLineAsc, 4) | (_, 4) => CmdLineDesc,
+
+                let col = *col as u8 - b'0';
+                self.sort = match (self.sort, col) {
+                    (UserAsc, 1) => UserDesc,
+                    (UserDesc, 1) | (_, 1) => UserAsc,
+                    (VmRssDesc, 2) => VmRssAsc,
+                    (VmRssAsc, 2) | (_, 2) => VmRssDesc,
+                    (CpuDesc, 3) => CpuAsc,
+                    (CpuAsc, 3) | (_, 3) => CpuDesc,
+                    (CmdLineDesc, 4) => CmdLineAsc,
+                    (CmdLineAsc, 4) | (_, 4) => CmdLineDesc,
                     _ => return,
                 };
 
@@ -1518,7 +1520,7 @@ impl Component for ProcessList {
                 self.dirty = true;
             }
             UIEvent::Input(k)
-                if *k == map["toggle help overlay"] && self.mode.input == Inactive =>
+                if *k == map["toggle help overlay"].1 && self.mode.input == Inactive =>
             {
                 self.draw_help = !self.draw_help;
                 self.force_redraw = true;
@@ -1561,7 +1563,7 @@ impl Component for ProcessList {
                     self.dirty = true;
                 }
             }
-            UIEvent::Input(k) if *k == map["filter"] && self.mode.input == Inactive => {
+            UIEvent::Input(k) if *k == map["filter"].1 && self.mode.input == Inactive => {
                 self.mode.input.set_active(ui_mode);
                 self.mode.active |= FILTER_ACTIVE;
                 self.mode.active &= !SEARCH_ACTIVE;
@@ -1573,7 +1575,7 @@ impl Component for ProcessList {
                 self.dirty = true;
             }
             UIEvent::Input(k)
-                if *k == map["follow process group"] && self.mode.input == Inactive =>
+                if *k == map["follow process group"].1 && self.mode.input == Inactive =>
             {
                 if self.mode.is_active(FOLLOW_ACTIVE) {
                     self.mode.active &= !FOLLOW_ACTIVE;
@@ -1599,13 +1601,13 @@ impl Component for ProcessList {
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["freeze updates"] && (self.mode.input == Inactive) => {
+            UIEvent::Input(k) if *k == map["freeze updates"].1 && (self.mode.input == Inactive) => {
                 self.freeze = !self.freeze;
                 self.force_redraw = true;
                 self.dirty = true;
             }
             UIEvent::Input(k)
-                if *k == map["locate process by pid"] && self.mode.input == Inactive =>
+                if *k == map["locate process by pid"].1 && self.mode.input == Inactive =>
             {
                 if self.mode.is_active(LOCATE_ACTIVE) {
                     self.mode.active &= !LOCATE_ACTIVE;
@@ -1618,7 +1620,7 @@ impl Component for ProcessList {
                 self.force_redraw = true;
             }
             UIEvent::Input(k)
-                if *k == map["search process by name"] && self.mode.input == Inactive =>
+                if *k == map["search process by name"].1 && self.mode.input == Inactive =>
             {
                 self.mode.active |= SEARCH_ACTIVE;
                 self.mode.search.3 = true;
@@ -1630,14 +1632,16 @@ impl Component for ProcessList {
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["kill process"] && !self.mode.is_active(KILL_ACTIVE) => {
+            UIEvent::Input(k)
+                if *k == map["kill process"].1 && !self.mode.is_active(KILL_ACTIVE) =>
+            {
                 self.mode.active |= KILL_ACTIVE;
                 self.mode.input.set_active(ui_mode);
                 self.freeze = true;
                 self.dirty = true;
                 self.force_redraw = true;
             }
-            UIEvent::Input(k) if *k == map["cancel"] => {
+            UIEvent::Input(k) if *k == map["cancel"].1 => {
                 // layered cancelling
                 if self.mode.is_active(HELP_ACTIVE) {
                     self.mode.active &= !HELP_ACTIVE;
@@ -1668,7 +1672,7 @@ impl Component for ProcessList {
                 self.force_redraw = true;
                 self.dirty = true;
             }
-            UIEvent::Input(k) if *k == map["toggle tree view"] && self.mode.input == Inactive => {
+            UIEvent::Input(k) if *k == map["toggle tree view"].1 && self.mode.input == Inactive => {
                 self.draw_tree = !self.draw_tree;
                 self.force_redraw = true;
                 self.dirty = true;
@@ -1796,17 +1800,22 @@ impl Component for ProcessList {
     }
 
     fn set_dirty(&mut self) {}
+
     fn get_shortcuts(&self) -> ShortcutMaps {
         let mut map: ShortcutMap = Default::default();
-        map.insert("follow process group", Key::Char('F'));
-        map.insert("locate process by pid", Key::Char('L'));
-        map.insert("freeze updates", Key::Char('f'));
-        map.insert("toggle tree view", Key::Char('t'));
-        map.insert("kill process", Key::Char('k'));
-        map.insert("filter", Key::Char(' '));
-        map.insert("search process by name", Key::Char('/'));
-        map.insert("cancel", Key::Esc);
-        map.insert("toggle help overlay", Key::Char('h'));
+        map.insert("sort by User (toggle)", (0, Key::Char('1')));
+        map.insert("sort by VmRss (toggle)", (1, Key::Char('2')));
+        map.insert("sort by Cpu (toggle)", (2, Key::Char('3')));
+        map.insert("sort by command line (toggle)", (3, Key::Char('4')));
+        map.insert("follow process group", (4, Key::Char('F')));
+        map.insert("locate process by pid", (5, Key::Char('L')));
+        map.insert("freeze updates", (6, Key::Char('f')));
+        map.insert("toggle tree view", (7, Key::Char('t')));
+        map.insert("kill process", (8, Key::Char('k')));
+        map.insert("filter", (9, Key::Char(' ')));
+        map.insert("search process by name", (10, Key::Char('/')));
+        map.insert("cancel", (11, Key::Esc));
+        map.insert("toggle help overlay", (12, Key::Char('h')));
         let mut ret: ShortcutMaps = Default::default();
         ret.insert("".to_string(), map);
         ret

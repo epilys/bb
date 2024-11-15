@@ -1,32 +1,30 @@
 [package]
 name = "bb"
-version = "0.4.3"
-authors = ["Manos Pitsidianakis <el13635@mail.ntua.gr>"]
+version = "0.4.4"
+authors = ["Manos Pitsidianakis <manos@pitsidianak.is>"]
 license = "GPL-3.0-or-later"
 readme = "README.md"
 description = "clean simple fast process viewer"
-homepage = "https://nessuent.xyz/bb.html"
+homepage = "https://nessuent.net/bb.html"
 repository = "https://github.com/epilys/bb.git"
 categories = ["command-line-utilities", ]
 keywords = ["process", "processes", "top", "ps"]
 edition = "2018"
 build = "build.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [[bin]]
 name = "bb"
 path = "src/main.rs"
 
 [dependencies]
+cassowary = "^0.3.0"
 crossbeam = "0.8.4"
+libc = "0.2.62"
+nix = "0.20.2"
 signal-hook = "0.1.12"
 signal-hook-registry = "1.2.0"
 termion = "1.5.3"
-libc = "0.2.62"
 unicode-segmentation = "1.2.1"
-nix = "0.20.2"
-cassowary = "^0.3.0"
 
 [profile.release]
 opt-level = 'z'  # Optimize for size.

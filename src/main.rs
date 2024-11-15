@@ -20,6 +20,16 @@ extern crate nix;
 extern crate signal_hook;
 extern crate termion;
 
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+compile_error!("Only Linux is supported due to procfs being a hard dependency.");
+
 use std::{
     io::Error,
     sync::{
@@ -72,37 +82,39 @@ pub mod username {
         buffer: &mut [u8; 16384],
     ) -> Option<libc::passwd> {
         let mut pwentp = null_mut();
-        #[cfg(any(
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "freebsd",
-            target_os = "dragonfly",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        ))]
-        {
-            let mut pwent = libc::passwd {
-                pw_name: null_mut(),
-                pw_passwd: null_mut(),
-                pw_uid,
-                pw_gid: 0,
-                pw_change: 0,
-                pw_class: null_mut(),
-                pw_gecos: null_mut(),
-                pw_dir: null_mut(),
-                pw_shell: null_mut(),
-                pw_expire: 0,
-            };
-            unsafe {
-                libc::getpwuid_r(pw_uid, &mut pwent, buffer, 16384, &mut pwentp);
-            }
+        // The following is copied code from whoami, but we don't target those OSes.
+        //
+        // #[cfg(any(
+        //     target_os = "macos",
+        //     target_os = "ios",
+        //     target_os = "freebsd",
+        //     target_os = "dragonfly",
+        //     target_os = "openbsd",
+        //     target_os = "netbsd"
+        // ))]
+        // {
+        //     let mut pwent = libc::passwd {
+        //         pw_name: null_mut(),
+        //         pw_passwd: null_mut(),
+        //         pw_uid,
+        //         pw_gid: 0,
+        //         pw_change: 0,
+        //         pw_class: null_mut(),
+        //         pw_gecos: null_mut(),
+        //         pw_dir: null_mut(),
+        //         pw_shell: null_mut(),
+        //         pw_expire: 0,
+        //     };
+        //     unsafe {
+        //         libc::getpwuid_r(pw_uid, &mut pwent, buffer, 16384, &mut pwentp);
+        //     }
 
-            if pwentp.is_null() {
-                None
-            } else {
-                Some(pwent)
-            }
-        }
+        //     if pwentp.is_null() {
+        //         None
+        //     } else {
+        //         Some(pwent)
+        //     }
+        // }
         #[cfg(target_os = "linux")]
         {
             let mut pwent = libc::passwd {
